@@ -1,0 +1,14 @@
+FTRIVA TEST DEPLOYMENT CHECKLIST
+
+1. Deploy with Cloudflare Workers (Wrangler or Workers Builds). Do NOT use Pages drag-and-drop static upload.
+2. Confirm GET /api/health returns JSON with ok:true.
+3. Confirm the homepage loads and all navigation pages open.
+4. Add PAYSTACK_SECRET_KEY using a Paystack TEST secret key.
+5. Set ENVIRONMENT=test.
+6. For monthly plan checkout, configure a Paystack test subscription plan and set PAYSTACK_MONTHLY_PLAN_CODE. Without this, monthly checkout is intentionally disabled.
+7. Configure Supabase URL and service-role secret only after confirming the target assessment table and columns in the existing database.
+8. Test once-off payment using Paystack test credentials.
+9. Confirm payment callback says Payment verified before assessment unlocks.
+10. Submit an assessment only after configuring a compatible Supabase table. Confirm the row exists in Supabase.
+11. Test failed/cancelled payments and confirm assessment remains locked.
+12. Do not change the live website or use live payment keys until all tests pass and the owner approves.

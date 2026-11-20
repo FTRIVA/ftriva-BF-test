@@ -1,146 +1,19 @@
-const json = (data, status = 200) => new Response(JSON.stringify(data), {
-  status,
-  headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
-});
-const corsHeaders = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "content-type" };
-const allowedPackages = {
-  once_off: { name: "Once-off programme", amount: 29900, currency: "ZAR", type: "once_off" },
-  monthly: { name: "Monthly membership", amount: 24900, currency: "ZAR", type: "monthly" }
-};
-
-function safeText(value, max = 180) {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-function validEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value || "");
-}
-async function paystackRequest(path, secret, body) {
-  const response = await fetch(`https://api.paystack.co${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.status) throw new Error(data.message || `Paystack request failed (${response.status})`);
-  return data.data;
-}
-async function verifyPaystack(reference, env) {
-  const secret = env.PAYSTACK_SECRET_KEY;
-  if (!secret) throw new Error("PAYSTACK_SECRET_KEY is not configured in this Worker.");
-  const data = await paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`, secret);
-  if (data.status !== "success") throw new Error("Payment has not been verified as successful.");
-  return data;
-}
-async function supabaseInsert(table, record, env) {
-  const url = env.SUPABASE_URL;
-  const key = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return { saved: false, reason: "Supabase environment variables are not configured." };
-  const safeTable = /^[a-zA-Z0-9_]+$/.test(table || "") ? table : "";
-  if (!safeTable) return { saved: false, reason: "The configured Supabase table name is invalid." };
-  const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/${safeTable}`, {
-    method: "POST",
-    headers: { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json", prefer: "return=minimal" },
-    body: JSON.stringify(record)
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    return { saved: false, reason: `Supabase rejected the insert (${response.status}). Check that the configured table and columns match the record.`, detail: detail.slice(0, 500) };
-  }
-  return { saved: true };
-}
-async function handleApi(request, env) {
-  const url = new URL(request.url);
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-  if (request.method === "GET" && url.pathname === "/api/health") {
-    return json({ ok: true, service: "FTRIVA Worker", environment: env.ENVIRONMENT || "test", timestamp: new Date().toISOString() });
-  }
-  if (request.method === "POST" && url.pathname === "/api/payment/initialize") {
-    let body;
-    try { body = await request.json(); } catch { return json({ error: "Please submit valid form data." }, 400); }
-    const packageInfo = allowedPackages[body.package];
-    const email = safeText(body.email, 254).toLowerCase();
-    const fullName = safeText(body.fullName, 120);
-    const phone = safeText(body.phone, 40);
-    if (!packageInfo || !validEmail(email) || !fullName) return json({ error: "Please provide your name, a valid email address and a valid package." }, 400);
-    if (!env.PAYSTACK_SECRET_KEY) return json({ error: "Payment setup is incomplete: add PAYSTACK_SECRET_KEY under this Worker’s Settings → Variables and Secrets." }, 503);
-    const payload = {
-      email,
-      currency: "ZAR",
-      amount: packageInfo.amount,
-      callback_url: `${url.origin}/payment-callback.html`,
-      metadata: {
-        custom_fields: [
-          { display_name: "Customer name", variable_name: "customer_name", value: fullName },
-          { display_name: "Phone", variable_name: "phone", value: phone },
-          { display_name: "FTRIVA package", variable_name: "ftriva_package", value: packageInfo.type }
-        ],
-        ftriva_package: packageInfo.type,
-        customer_name: fullName,
-        phone,
-        environment: env.ENVIRONMENT || "test"
-      }
-    };
-    if (packageInfo.type === "monthly") {
-      if (!env.PAYSTACK_MONTHLY_PLAN_CODE) return json({ error: "Monthly membership checkout is not configured yet. Add a Paystack monthly plan code as PAYSTACK_MONTHLY_PLAN_CODE. No payment has been taken." }, 503);
-      payload.plan = env.PAYSTACK_MONTHLY_PLAN_CODE;
-      delete payload.amount;
-    }
-    try {
-      const data = await paystackRequest("/transaction/initialize", env.PAYSTACK_SECRET_KEY, payload);
-      return json({ authorizationUrl: data.authorization_url, reference: data.reference, accessCode: data.access_code, package: packageInfo.type });
-    } catch (error) { return json({ error: error.message || "Unable to start payment." }, 502); }
-  }
-  if (request.method === "POST" && url.pathname === "/api/payment/verify") {
-    let body;
-    try { body = await request.json(); } catch { return json({ error: "Invalid request." }, 400); }
-    const reference = safeText(body.reference, 120);
-    if (!reference) return json({ error: "Payment reference is required." }, 400);
-    try {
-      const payment = await verifyPaystack(reference, env);
-      const meta = payment.metadata || {};
-      const expectedPackage = safeText(meta.ftriva_package, 30);
-      const expectedAmount = expectedPackage === "monthly" ? 24900 : expectedPackage === "once_off" ? 29900 : null;
-      if (!expectedAmount || Number(payment.amount) < expectedAmount) return json({ error: "The verified transaction does not match a recognised FTRIVA package amount." }, 400);
-      return json({ verified: true, reference: payment.reference, amount: payment.amount, currency: payment.currency, package: expectedPackage, customer: payment.customer?.email || "" });
-    } catch (error) { return json({ verified: false, error: error.message || "Payment verification failed." }, 400); }
-  }
-  if (request.method === "POST" && url.pathname === "/api/assessment/submit") {
-    let body;
-    try { body = await request.json(); } catch { return json({ error: "Invalid assessment submission." }, 400); }
-    const reference = safeText(body.paymentReference, 120);
-    if (!reference) return json({ error: "A verified payment reference is required before submitting the assessment." }, 403);
-    let payment;
-    try { payment = await verifyPaystack(reference, env); } catch (error) { return json({ error: `Payment verification failed: ${error.message}` }, 403); }
-    const meta = payment.metadata || {};
-    if (!["once_off", "monthly"].includes(meta.ftriva_package)) return json({ error: "This payment is not associated with a FTRIVA package." }, 403);
-    const assessment = body.assessment;
-    if (!assessment || typeof assessment !== "object") return json({ error: "Assessment data is missing." }, 400);
-    const record = {
-      payment_reference: payment.reference,
-      package_type: meta.ftriva_package,
-      customer_email: payment.customer?.email || safeText(assessment.personal?.email, 254),
-      assessment_data: assessment,
-      requested_start_date: safeText(assessment.startDate, 20) || null,
-      status: "assessment_submitted",
-      submitted_at: new Date().toISOString()
-    };
-    const result = await supabaseInsert(env.SUPABASE_ASSESSMENTS_TABLE || "ftriva_assessments", record, env);
-    if (!result.saved) return json({ error: "Your payment is verified, but the assessment could not be saved to Supabase.", detail: result.reason, technicalDetail: result.detail || null, paymentVerified: true }, 503);
-    return json({ submitted: true, message: "Your assessment has been submitted successfully.", status: "assessment_submitted" });
-  }
-  return json({ error: "API route not found." }, 404);
-}
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/")) {
-      const response = await handleApi(request, env);
-      const headers = new Headers(response.headers);
-      for (const [key, value] of Object.entries(corsHeaders)) headers.set(key, value);
-      return new Response(response.body, { status: response.status, headers });
-    }
-    if (env.ASSETS) return env.ASSETS.fetch(request);
-    return new Response("FTRIVA assets binding is missing. Check wrangler.jsonc.", { status: 500 });
-  }
-};
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store"}});
+const cors={"access-control-allow-origin":"*","access-control-allow-methods":"GET, POST, OPTIONS","access-control-allow-headers":"content-type"};
+const packages={start:{name:"START",amount:19900,kind:"once_off"},progress:{name:"PROGRESS",amount:39900,kind:"once_off"},performance:{name:"PERFORMANCE",amount:29900,kind:"once_off"},digital:{name:"DIGITAL",amount:4900,kind:"once_off"},essential:{name:"ESSENTIAL",amount:24900,kind:"membership",planEnv:"PAYSTACK_PLAN_ESSENTIAL"},plus:{name:"PLUS",amount:39900,kind:"membership",planEnv:"PAYSTACK_PLAN_PLUS"},elite:{name:"ELITE",amount:59900,kind:"membership",planEnv:"PAYSTACK_PLAN_ELITE"}};
+const safe=(v,n=180)=>typeof v==="string"?v.trim().slice(0,n):"";const validEmail=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v||"");
+async function paystack(path,env,body){if(!env.PAYSTACK_SECRET_KEY)throw Error("PAYSTACK_SECRET_KEY is not configured as a Cloudflare Worker secret.");const r=await fetch(`https://api.paystack.co${path}`,{method:body?"POST":"GET",headers:{authorization:`Bearer ${env.PAYSTACK_SECRET_KEY}`,"content-type":"application/json"},body:body?JSON.stringify(body):undefined});const d=await r.json().catch(()=>({}));if(!r.ok||!d.status)throw Error(d.message||`Paystack request failed (${r.status})`);return d.data}
+async function verify(reference,env){const d=await paystack(`/transaction/verify/${encodeURIComponent(reference)}`,env);if(d.status!=="success"||d.currency!=="ZAR")throw Error("Payment is not verified as a successful ZAR transaction.");return d}
+function supabaseHeaders(env){return{apikey:env.SUPABASE_SERVICE_ROLE_KEY,authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,"content-type":"application/json"}}
+async function sb(path,env,opts={}){if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw Error("Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as Worker secrets.");const r=await fetch(`${env.SUPABASE_URL.replace(/\/$/,"")}/rest/v1/${path}`,{...opts,headers:{...supabaseHeaders(env),...(opts.headers||{})}});const txt=await r.text();if(!r.ok)throw Error(`Supabase request failed (${r.status}): ${txt.slice(0,400)}`);return txt?JSON.parse(txt):null}
+async function notifyWhatsApp(name,email,packageName,env){if(!env.WHATSAPP_ACCESS_TOKEN||!env.WHATSAPP_PHONE_NUMBER_ID||!env.WHATSAPP_ADMIN_NUMBER||!env.WHATSAPP_TEMPLATE_NAME)return{sent:false,reason:"WhatsApp Cloud API credentials/template not configured."};const payload={messaging_product:"whatsapp",to:env.WHATSAPP_ADMIN_NUMBER,type:"template",template:{name:env.WHATSAPP_TEMPLATE_NAME,language:{code:env.WHATSAPP_TEMPLATE_LANGUAGE||"en"},components:[{type:"body",parameters:[{type:"text",text:name||"New customer"},{type:"text",text:email||"Not provided"},{type:"text",text:packageName||"FTRIVA programme"}]}]}};const r=await fetch(`https://graph.facebook.com/v22.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`,{method:"POST",headers:{authorization:`Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,"content-type":"application/json"},body:JSON.stringify(payload)});if(!r.ok){const t=await r.text();return{sent:false,reason:`WhatsApp API rejected notification (${r.status}): ${t.slice(0,250)}`}}return{sent:true}}
+async function api(req,env){const u=new URL(req.url);if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors});
+if(req.method==="GET"&&u.pathname==="/api/health")return json({ok:true,service:"FTRIVA Worker",environment:env.ENVIRONMENT||"test",timestamp:new Date().toISOString()});
+if(req.method==="POST"&&u.pathname==="/api/payment/initialize"){let b;try{b=await req.json()}catch{return json({error:"Invalid checkout details."},400)}const id=safe(b.package,30).toLowerCase(),p=packages[id],email=safe(b.email,254).toLowerCase(),fullName=safe(b.fullName,120),phone=safe(b.phone,40);if(!p||!validEmail(email)||!fullName)return json({error:"Please provide your name, valid email and a specific FTRIVA package."},400);let body={email,currency:"ZAR",amount:p.amount,callback_url:`${u.origin}/payment-callback.html`,metadata:{ftriva_package:id,package_name:p.name,customer_name:fullName,phone,environment:env.ENVIRONMENT||"test"}};if(p.kind==="membership"){const plan=env[p.planEnv];if(!plan)return json({error:`${p.name} recurring Paystack plan is not configured. Add ${p.planEnv}. No payment has been taken.`},503);body.plan=plan;delete body.amount}try{const d=await paystack("/transaction/initialize",env,body);return json({authorizationUrl:d.authorization_url,reference:d.reference,package:id})}catch(e){return json({error:e.message},502)}}
+if(req.method==="POST"&&u.pathname==="/api/payment/verify"){let b;try{b=await req.json()}catch{return json({error:"Invalid request."},400)}try{const d=await verify(safe(b.reference,120),env),id=safe(d.metadata?.ftriva_package,30),p=packages[id];if(!p)return json({error:"Payment is not linked to a recognised FTRIVA package."},400);if(p.kind==="once_off"&&Number(d.amount)!==p.amount)return json({error:"Payment amount does not match the selected FTRIVA package."},400);if(p.kind==="membership"&&Number(d.amount)<p.amount)return json({error:"Membership payment amount is below the selected package price."},400);return json({verified:true,reference:d.reference,amount:d.amount,currency:d.currency,package:id,customer:d.customer?.email||""})}catch(e){return json({verified:false,error:e.message},400)}}
+if(req.method==="POST"&&u.pathname==="/api/founders/claim"){let b;try{b=await req.json()}catch{return json({error:"Invalid claim request."},400)}const id=safe(b.package,30).toLowerCase(),p=packages[id],email=safe(b.email,254).toLowerCase(),name=safe(b.fullName,120),phone=safe(b.phone,40);if(!p||p.kind!=="once_off"||!validEmail(email)||!name)return json({error:"The Founding 10 offer is available for eligible once-off programmes. Enter your name and valid email."},400);try{const rows=await sb("rpc/ftriva_claim_founder",env,{method:"POST",body:JSON.stringify({p_email:email,p_full_name:name,p_phone:phone,p_package_id:id})});const claim=Array.isArray(rows)?rows[0]:rows;if(!claim?.claim_id)return json({error:"The Founding 10 claim could not be confirmed."},503);return json({claimed:true,claimId:claim.claim_id,package:id,remaining:claim.remaining})}catch(e){const msg=e.message.includes("FOUNDERS_FULL")?"All 10 Founding 10 places have been claimed.":e.message.includes("ALREADY_CLAIMED")?"This email address has already claimed a Founding 10 programme.":e.message;return json({error:msg},409)}}
+if(req.method==="POST"&&u.pathname==="/api/assessment/submit"){let b;try{b=await req.json()}catch{return json({error:"Invalid assessment."},400)}const assessment=b.assessment;if(!assessment||typeof assessment!=="object")return json({error:"Assessment information is missing."},400);const paidRef=safe(b.paymentReference,120),claimId=safe(b.founderClaimId,80);let packageId,reference=null,packageType;
+try{if(paidRef){const payment=await verify(paidRef,env);packageId=safe(payment.metadata?.ftriva_package,30);const p=packages[packageId];if(!p)return json({error:"Payment does not match a FTRIVA package."},403);if(p.kind==="once_off"&&Number(payment.amount)!==p.amount)return json({error:"Verified payment amount does not match package."},403);packageType=p.kind;reference=payment.reference}else if(claimId){const claims=await sb(`ftriva_founder_claims?id=eq.${encodeURIComponent(claimId)}&status=eq.claimed&select=id,email,package_id`,env);const claim=claims?.[0];if(!claim)return json({error:"Founding 10 claim is invalid, already used or expired."},403);packageId=claim.package_id;packageType="founder_free";reference=`FOUNDER-${claim.id}`}else return json({error:"A verified payment or valid Founding 10 claim is required."},403);
+assessment.selectedPackage=packageId;assessment.packageType=packageType;const record={payment_reference:reference,package_type:packageType,customer_email:safe(assessment.personal?.email,254),assessment_data:assessment,requested_start_date:safe(assessment.startDate,20)||null,status:"assessment_submitted",submitted_at:new Date().toISOString()};await sb(env.SUPABASE_ASSESSMENTS_TABLE||"ftriva_assessments",env,{method:"POST",headers:{prefer:"return=minimal"},body:JSON.stringify(record)});if(claimId)await sb(`ftriva_founder_claims?id=eq.${encodeURIComponent(claimId)}`,env,{method:"PATCH",headers:{prefer:"return=minimal"},body:JSON.stringify({status:"assessment_submitted",assessment_submitted_at:new Date().toISOString()})});const wa=await notifyWhatsApp(safe(assessment.personal?.fullName,120),safe(assessment.personal?.email,254),packages[packageId]?.name,env);return json({submitted:true,whatsappNotification:wa.sent,whatsappNotice:wa.sent?"Admin notification sent.":"Assessment saved. WhatsApp notification is not configured yet."})}catch(e){return json({error:"Your details could not be fully saved. Please do not submit payment again. Contact FTRIVA if payment was successful.",detail:e.message},503)}}
+return json({error:"API route not found."},404)}
+export default{async fetch(request,env){const u=new URL(request.url);if(u.pathname.startsWith("/api/")){const r=await api(request,env);const h=new Headers(r.headers);Object.entries(cors).forEach(([k,v])=>h.set(k,v));return new Response(r.body,{status:r.status,headers:h})}return env.ASSETS?env.ASSETS.fetch(request):new Response("FTRIVA assets binding missing.",{status:500})}};

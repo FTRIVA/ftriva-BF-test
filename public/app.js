@@ -1,110 +1,13 @@
-const $ = (s, root=document) => root.querySelector(s);
-const $$ = (s, root=document) => [...root.querySelectorAll(s)];
-const menu = $('.menu-toggle');
-if (menu) menu.addEventListener('click', () => $('.nav-links')?.classList.toggle('open'));
-const current = location.pathname.split('/').pop() || 'index.html';
-$$('.nav-links a').forEach(a => { if (a.getAttribute('href') === current) a.classList.add('active'); });
-
-const quizForm = $('#recommendation-form');
-if (quizForm) {
-  quizForm.addEventListener('submit', e => {
-    e.preventDefault();
-    const data = new FormData(quizForm);
-    const ongoing = data.get('coaching') === 'ongoing' || data.get('reviews') === 'yes' || data.get('support') === 'high';
-    const result = $('#recommendation-result');
-    result.classList.remove('hidden');
-    result.innerHTML = ongoing
-      ? `<span class="recommend-label">Recommended for you</span><h3>Monthly membership — from R249/month</h3><p>Your answers suggest that ongoing programming and regular progress support may suit your goals. You can still choose the once-off programme if you prefer.</p><a class="btn btn-bronze" href="start-assessment.html?package=monthly">Choose monthly membership</a> <a class="btn btn-dark" href="start-assessment.html?package=once_off">Choose once-off</a>`
-      : `<span class="recommend-label">Recommended for you</span><h3>Once-off programme — from R299</h3><p>Your answers suggest that a focused 4–8 week programme may be a good starting point. You can still choose ongoing membership if you prefer.</p><a class="btn btn-bronze" href="start-assessment.html?package=once_off">Choose once-off programme</a> <a class="btn btn-dark" href="start-assessment.html?package=monthly">Choose monthly membership</a>`;
-    result.scrollIntoView({behavior:'smooth',block:'center'});
-  });
-}
-
-const checkoutForm = $('#checkout-form');
-if (checkoutForm) {
-  const packageField = $('#package');
-  const selected = new URLSearchParams(location.search).get('package');
-  if (selected && packageField) packageField.value = selected;
-  checkoutForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    const button = $('button[type="submit"]', checkoutForm), message = $('#checkout-message');
-    message.className = ''; message.textContent = '';
-    button.disabled = true; button.textContent = 'Connecting to secure checkout…';
-    try {
-      const payload = Object.fromEntries(new FormData(checkoutForm).entries());
-      const response = await fetch('/api/payment/initialize', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Unable to start checkout.');
-      sessionStorage.setItem('ftriva_checkout_email', payload.email);
-      sessionStorage.setItem('ftriva_checkout_name', payload.fullName);
-      sessionStorage.setItem('ftriva_checkout_package', payload.package);
-      location.href = result.authorizationUrl;
-    } catch (err) {
-      message.className = 'error'; message.textContent = err.message;
-      button.disabled = false; button.textContent = 'Continue to secure payment';
-    }
-  });
-}
-
-const callbackMessage = $('#callback-message');
-if (callbackMessage) {
-  const reference = new URLSearchParams(location.search).get('reference') || new URLSearchParams(location.search).get('trxref');
-  if (!reference) callbackMessage.innerHTML = '<div class="error">No payment reference was found. Please contact FTRIVA before trying again.</div>';
-  else {
-    (async () => {
-      callbackMessage.innerHTML = '<p>Verifying your payment securely…</p>';
-      try {
-        const response = await fetch('/api/payment/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference})});
-        const result = await response.json();
-        if (!response.ok || !result.verified) throw new Error(result.error || 'Payment could not be verified.');
-        sessionStorage.setItem('ftriva_verified_reference', result.reference);
-        sessionStorage.setItem('ftriva_verified_package', result.package);
-        callbackMessage.innerHTML = `<div class="success"><strong>Payment verified.</strong><p>Your payment was successfully verified. You can now complete your detailed fitness assessment.</p><a class="btn btn-dark" href="assessment.html">Continue to fitness assessment</a></div>`;
-      } catch (err) { callbackMessage.innerHTML = `<div class="error"><strong>Payment not verified.</strong><p>${escapeHtml(err.message)}</p><p>If money was deducted, do not pay again until the transaction has been checked.</p><a href="mailto:ftrivafitness@gmail.com">Contact FTRIVA</a></div>`; }
-    })();
-  }
-}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-
-const assessmentForm = $('#assessment-form');
-if (assessmentForm) {
-  const reference = sessionStorage.getItem('ftriva_verified_reference');
-  if (!reference) {
-    assessmentForm.classList.add('hidden');
-    $('#assessment-locked')?.classList.remove('hidden');
-  } else {
-    $('#payment-reference').value = reference;
-    $('#assessment-package').textContent = sessionStorage.getItem('ftriva_verified_package') === 'monthly' ? 'Monthly membership' : 'Once-off programme';
-  }
-  $$('[data-conditional]').forEach(el => {
-    const source = el.dataset.conditional;
-    const update = () => { const target = document.getElementById(el.dataset.target); if (target) target.classList.toggle('hidden', !el.checked); };
-    $$(`[name="${source}"]`).forEach(input => input.addEventListener('change', update)); update();
-  });
-  assessmentForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    const btn = $('button[type="submit"]', assessmentForm), msg = $('#assessment-message');
-    btn.disabled = true; btn.textContent = 'Submitting securely…'; msg.className=''; msg.textContent='';
-    const fd = new FormData(assessmentForm); const data = {};
-    for (const [key,value] of fd.entries()) { if (key === 'paymentReference') continue; if (key.endsWith('[]')) { const k=key.slice(0,-2); (data[k] ||= []).push(value); } else if (data[key] !== undefined) { data[key] = Array.isArray(data[key]) ? [...data[key],value] : [data[key],value]; } else data[key]=value; }
-    const assessment = {
-      personal:{fullName:data.fullName,email:data.email,phone:data.phone,dateOfBirth:data.dateOfBirth,country:data.country,communication:data.communication,guardianName:data.guardianName,guardianEmail:data.guardianEmail},
-      goals:{primary:data.primaryGoal,secondary:data.secondaryGoal,target:data.target,motivation:data.motivation},
-      trainingHistory:{structured:data.structuredTraining,experience:data.experience,trainingTypes:data.trainingTypes,lastConsistent:data.lastConsistent},
-      currentActivity:{activityLevel:data.activityLevel,daysPerWeek:data.daysPerWeek,activities:data.activities,fitnessLevel:data.fitnessLevel,height:data.height,weight:data.weight},
-      health:{injuryOrPain:data.injuryOrPain,injuryDetails:data.injuryDetails,conditions:data.conditions,medication:data.medication,restrictions:data.restrictions,warningSymptoms:data.warningSymptoms,avoidMovements:data.avoidMovements},
-      equipment:{environment:data.environment,equipment:data.equipment,access:data.access,limitations:data.limitations},
-      schedule:{sessions:data.sessions,duration:data.duration,days:data.days,sport:data.sport,restPreference:data.restPreference},
-      preferences:{styles:data.styles,favouriteExercises:data.favouriteExercises,dislikedExercises:data.dislikedExercises,sessionStyle:data.sessionStyle},
-      startDate:data.startDate === "specific_date" ? data.desiredStartDate : data.startDate, startDatePreference:data.startDate, additionalComments:data.additionalComments, consents:{accurate:data.consentAccurate,privacy:data.consentPrivacy,onlineScope:data.consentScope,guardian:data.guardianConsent}
-    };
-    try {
-      const response = await fetch('/api/assessment/submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentReference:reference,assessment})});
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error + (result.detail ? ` ${result.detail}` : ''));
-      msg.className='success'; msg.textContent='Thank you. Your assessment has been submitted. FTRIVA will review your information and prepare your programme.';
-      assessmentForm.reset(); sessionStorage.removeItem('ftriva_verified_reference');
-    } catch(err) { msg.className='error'; msg.textContent=err.message; }
-    btn.disabled=false; btn.textContent='Submit my assessment';
-  });
-}
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const menu=$('.menu-toggle');if(menu)menu.addEventListener('click',()=>$('.nav-links')?.classList.toggle('open'));
+const current=location.pathname.split('/').pop()||'index.html';$$('.nav-links a').forEach(a=>{if(a.getAttribute('href')===current)a.classList.add('active')});
+const PACKAGES={start:{name:'START',amount:19900,old:29900,kind:'once_off',duration:'4 weeks'},progress:{name:'PROGRESS',amount:39900,old:54900,kind:'once_off',duration:'8 weeks'},performance:{name:'PERFORMANCE',amount:29900,old:39900,kind:'once_off',duration:'4 weeks'},digital:{name:'DIGITAL',amount:4900,old:14900,kind:'once_off',duration:'Digital product'},essential:{name:'ESSENTIAL',amount:24900,kind:'membership',duration:'Monthly'},plus:{name:'PLUS',amount:39900,kind:'membership',duration:'Monthly'},elite:{name:'ELITE',amount:59900,kind:'membership',duration:'Monthly'}};
+const rec=$('#recommendation-form');if(rec)rec.addEventListener('submit',e=>{e.preventDefault();const d=new FormData(rec), ongoing=d.get('coaching')==='ongoing'||d.get('reviews')==='yes';let id=ongoing?'plus':d.get('goal')==='performance'?'performance':d.get('experience')==='Beginner'?'start':'progress';const p=PACKAGES[id],box=$('#recommendation-result');box.classList.remove('hidden');box.innerHTML=`<span class="recommend-label">RECOMMENDED PACKAGE</span><h3>${p.name}</h3><p>${p.duration} · ${p.kind==='membership'?'R'+(p.amount/100)+'/month':'R'+(p.amount/100)+' once-off'}</p><a class="btn btn-bronze" href="start-assessment.html?package=${id}">Choose recommended package</a> <a href="programmes.html" class="btn btn-dark">Compare all packages</a>`;box.scrollIntoView({behavior:'smooth',block:'center'})});
+const checkout=$('#checkout-form');if(checkout){const params=new URLSearchParams(location.search),id=(params.get('package')||'start').toLowerCase(),p=PACKAGES[id],founder=params.get('founder')==='1';if(!p){$('#checkout-message').textContent='Please select a valid FTRIVA package from the packages page.';checkout.querySelector('button[type=submit]').disabled=true}else{$('#package').value=id;$('#selected-package-summary').innerHTML=`<strong>${p.name}</strong> · ${p.duration}<br>${p.kind==='membership'?'R'+(p.amount/100)+'/month':'<span class="old-price">R'+(p.old/100)+'</span> <strong>R'+(p.amount/100)+'</strong> once-off'}${founder&&p.kind==='once_off'?'<br><strong>Founding 10:</strong> You can attempt to claim this qualifying programme free.':''}`}
+checkout.addEventListener('submit',async e=>{e.preventDefault();const btn=$('button[type=submit]',checkout),msg=$('#checkout-message');btn.disabled=true;msg.className='';msg.textContent='';const payload=Object.fromEntries(new FormData(checkout).entries());payload.founderClaim=founder&&p?.kind==='once_off';try{if(payload.founderClaim){const r=await fetch('/api/founders/claim',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({package:payload.package,fullName:payload.fullName,email:payload.email,phone:payload.phone})});const data=await r.json();if(!r.ok)throw new Error(data.error||'The Founding 10 offer could not be claimed.');sessionStorage.setItem('ftriva_founder_claim',data.claimId);sessionStorage.setItem('ftriva_founder_package',payload.package);sessionStorage.setItem('ftriva_checkout_email',payload.email);location.href='assessment.html';return}
+const r=await fetch('/api/payment/initialize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok)throw new Error(data.error||'Unable to start checkout.');sessionStorage.setItem('ftriva_checkout_email',payload.email);sessionStorage.setItem('ftriva_checkout_name',payload.fullName);sessionStorage.setItem('ftriva_checkout_package',payload.package);location.href=data.authorizationUrl}catch(err){msg.className='error';msg.textContent=err.message;btn.disabled=false}})}
+const cb=$('#callback-message');if(cb){const q=new URLSearchParams(location.search),reference=q.get('reference')||q.get('trxref');if(!reference)cb.innerHTML='<div class="error">No payment reference was found. Contact FTRIVA before trying again.</div>';else(async()=>{cb.textContent='Verifying your payment securely…';try{const r=await fetch('/api/payment/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference})}),d=await r.json();if(!r.ok||!d.verified)throw Error(d.error||'Payment verification failed');sessionStorage.setItem('ftriva_verified_reference',d.reference);sessionStorage.setItem('ftriva_verified_package',d.package);cb.innerHTML='<div class="success"><strong>Payment verified.</strong><p>Complete your detailed fitness assessment next.</p><a class="btn btn-dark" href="assessment.html">Continue to assessment</a></div>'}catch(e){cb.innerHTML=`<div class="error">${escapeHtml(e.message)}</div>`}})()}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+const af=$('#assessment-form');if(af){const reference=sessionStorage.getItem('ftriva_verified_reference'),claim=sessionStorage.getItem('ftriva_founder_claim');if(!reference&&!claim){af.classList.add('hidden');$('#assessment-locked')?.classList.remove('hidden')}else{$('#payment-reference').value=reference||'';$('#assessment-package').textContent=PACKAGES[sessionStorage.getItem('ftriva_verified_package')||sessionStorage.getItem('ftriva_founder_package')]?.name||'Selected FTRIVA package'}
+$$('[data-conditional]').forEach(el=>{const update=()=>{const t=document.getElementById(el.dataset.target);if(t)t.classList.toggle('hidden',!el.checked)};$$(`[name="${el.dataset.conditional}"]`).forEach(i=>i.addEventListener('change',update));update()});
+af.addEventListener('submit',async e=>{e.preventDefault();const btn=$('button[type=submit]',af),msg=$('#assessment-message');btn.disabled=true;msg.className='';msg.textContent='Submitting securely…';const fd=new FormData(af),d={};for(const [k,v] of fd.entries()){if(k==='paymentReference')continue;if(k.endsWith('[]'))(d[k.slice(0,-2)]??=[]).push(v);else if(d[k]!==undefined)d[k]=Array.isArray(d[k])?[...d[k],v]:[d[k],v];else d[k]=v}const assessment={personal:{fullName:d.fullName,email:d.email,phone:d.phone,dateOfBirth:d.dateOfBirth,country:d.country,communication:d.communication,guardianName:d.guardianName,guardianEmail:d.guardianEmail},goals:{primary:d.primaryGoal,secondary:d.secondaryGoal,target:d.target,motivation:d.motivation},trainingHistory:{structured:d.structuredTraining,experience:d.experience,trainingTypes:d.trainingTypes,lastConsistent:d.lastConsistent},currentActivity:{activityLevel:d.activityLevel,daysPerWeek:d.daysPerWeek,activities:d.activities,fitnessLevel:d.fitnessLevel,height:d.height,weight:d.weight},health:{injuryOrPain:d.injuryOrPain,injuryDetails:d.injuryDetails,conditions:d.conditions,medication:d.medication,restrictions:d.restrictions,warningSymptoms:d.warningSymptoms,avoidMovements:d.avoidMovements},equipment:{environment:d.environment,equipment:d.equipment,access:d.access,limitations:d.limitations},schedule:{sessions:d.sessions,duration:d.duration,days:d.days,sport:d.sport,restPreference:d.restPreference},preferences:{styles:d.styles,favouriteExercises:d.favouriteExercises,dislikedExercises:d.dislikedExercises,sessionStyle:d.sessionStyle},startDate:d.startDate==='specific_date'?d.desiredStartDate:d.startDate,startDatePreference:d.startDate,additionalComments:d.additionalComments,consents:{accurate:d.consentAccurate,privacy:d.consentPrivacy,onlineScope:d.consentScope,guardian:d.guardianConsent}};try{const r=await fetch('/api/assessment/submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paymentReference:reference,founderClaimId:claim,assessment})}),out=await r.json();if(!r.ok)throw Error(out.error||'Assessment could not be saved.');msg.className='success';msg.textContent='Thank you. Your assessment has been securely submitted. FTRIVA will review your information.';af.reset();['ftriva_verified_reference','ftriva_founder_claim','ftriva_founder_package'].forEach(k=>sessionStorage.removeItem(k))}catch(err){msg.className='error';msg.textContent=err.message}btn.disabled=false;btn.textContent='Submit my assessment'})}

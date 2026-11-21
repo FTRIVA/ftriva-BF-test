@@ -21,6 +21,16 @@ const expectedPrices = {
 
 const app = read('public/app.js');
 const worker = read('src/index.js');
+const programmes = read('public/programmes.html');
+const memberships = read('public/memberships.html');
+const publicFiles = pages.map(page => read(`public/${page}`)).join('\\n') + app;
+for (const amount of ['R199','R399','R299','R49']) {
+  assert.ok(programmes.includes(`<strong>${amount}</strong>`), `Programme price missing from page: ${amount}`);
+}
+for (const amount of ['R249','R399','R599']) {
+  assert.ok(memberships.includes(amount), `Membership price missing from page: ${amount}`);
+}
+assert.ok(!/(?:sk_(?:live|test)_|sb_secret_)/i.test(publicFiles), 'A server-side secret appears in public website assets');
 const css = read('public/styles.css');
 const wrangler = read('wrangler.jsonc');
 

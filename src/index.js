@@ -157,10 +157,10 @@ async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
   const packageInfo = PACKAGES[packageId];
   if (!packageInfo || packageInfo.type !== "monthly") return null;
 
-  const customerId = safeText(payment.customer?.id, 40);
+  const customerId = safeText(String(payment.customer?.id || ""), 40);
   const customerEmail = safeText(payment.customer?.email, 254).toLowerCase();
   const planCode = safeText(payment.plan_object?.plan_code || payment.plan?.plan_code, 160);
-  const planId = safeText(payment.plan_object?.id || payment.plan?.id, 40);
+  const planId = safeText(String(payment.plan_object?.id || payment.plan?.id || ""), 40);
   if (!customerId || !validEmail(customerEmail) || !planCode || !planId) {
     throw new Error("The verified monthly payment does not contain enough Paystack customer and plan details to reconcile its subscription.");
   }

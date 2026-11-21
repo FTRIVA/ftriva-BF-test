@@ -81,6 +81,23 @@ async function supabaseRequest(path, env, options = {}) {
   return data;
 }
 
+async function sendSignupNotification(env, signupType) {
+  // Notifications are deliberately generic: customer details and assessment
+  // information remain in the FTRIVA Website Supabase project.
+  if (!env.EMAIL || typeof env.EMAIL.send !== "function") return;
+  try {
+    await env.EMAIL.send({
+      from: "notifications@ftriva.com",
+      to: "ftrivafitness@gmail.com",
+      subject: "New FTRIVA sign-up",
+      text: `A new FTRIVA ${signupType} has been recorded. Sign in to the FTRIVA Website Supabase project to review the full record. No customer personal or assessment information is included in this email.`
+    });
+  } catch (error) {
+    // Email failure must never undo or block a successful purchase or claim.
+    console.error("FTRIVA sign-up notification failed:", error?.code || "EMAIL_ERROR", error?.message || "Unknown email error");
+  }
+}
+
 async function paystackRequest(path, secret, body) {
   const response = await fetch(`https://api.paystack.co${path}`, {
     method: body ? "POST" : "GET",
@@ -400,6 +417,7 @@ async function handleFounding10Claim(request, env) {
       return json({ claimed: false, error: "The Founding 10 claim details could not be accepted." }, 400);
     }
 
+    await sendSignupNotification(env, "Founding 10 free-programme claim");
     return json({
       claimed: true,
       claimToken,
@@ -497,9 +515,9 @@ async function handlePaystackWebhook(request, env) {
 
   // Keep an auditable, idempotent event record. A repeated webhook uses the
   // same SHA-256 event key and cannot create duplicate event rows.
-  await supabaseRequest("/rest/v1/ftriva_paystack_events?on_conflict=event_key", env, {
+  const eventRows = await supabaseRequest("/rest/v1/ftriva_paystack_events?on_conflict=event_key", env, {
     method: "POST",
-    headers: { prefer: "resolution=ignore-duplicates,return=minimal" },
+    headers: { prefer: "resolution=ignore-duplicates,return=representation" },
     body: JSON.stringify({
       event_key: eventKey,
       event_type: eventType,
@@ -508,9 +526,19 @@ async function handlePaystackWebhook(request, env) {
       processing_status: "received"
     })
   });
+  const isNewEvent = Array.isArray(eventRows) && eventRows.length === 1;
 
   try {
-    if (eventType === "subscription.create") {
+    if (eventType === "charge.success") {
+      const reference = safeText(data.reference, 160);
+      if (reference) {
+        const payment = await verifyPaystack(reference, env);
+        const { packageId, packageInfo } = getPackageFromPayment(payment);
+        verifyAmountAndCurrency(payment, packageId, packageInfo);
+        await savePurchase(payment, packageId, env);
+        if (isNewEvent) await sendSignupNotification(env, "paid programme or membership");
+      }
+    } else if (eventType === "subscription.create") {
       const planCode = safeText(data.plan?.plan_code || data.plan_code, 160);
       const packageId = membershipPackageForPlan(planCode, env);
       const email = safeText(data.customer?.email || data.email, 254).toLowerCase();
@@ -534,6 +562,7 @@ async function handlePaystackWebhook(request, env) {
             raw_paystack_data: data
           })
         });
+        if (isNewEvent) await sendSignupNotification(env, "new monthly membership");
       }
     } else if (["subscription.disable", "subscription.not_renew", "invoice.payment_failed"].includes(eventType) && subscriptionCode) {
       const nextStatus = eventType === "subscription.disable" ? "cancelled" : eventType === "subscription.not_renew" ? "non_renewing" : "attention";

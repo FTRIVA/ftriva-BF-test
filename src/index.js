@@ -595,6 +595,26 @@ async function handleApi(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Single website-to-app destination. Set FTRIVA_APP_URL when the web app is deployed.
+    if (request.method === "GET" && url.pathname === "/my-account") {
+      const appUrl = safeText(env.FTRIVA_APP_URL, 500);
+      if (appUrl) {
+        try {
+          const destination = new URL(appUrl);
+          if (destination.protocol === "https:") {
+            return Response.redirect(destination.toString(), 302);
+          }
+        } catch {
+          // Fall through to the unavailable page rather than redirecting to an unsafe URL.
+        }
+      }
+      return new Response(
+        "<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>FTRIVA Account</title><body style='margin:0;background:#101d2b;color:#f5f1e8;font:16px Arial,sans-serif;display:grid;min-height:100vh;place-items:center;text-align:center'><main style='max-width:520px;padding:32px'><h1 style='letter-spacing:.12em'>FTRIVA</h1><h2>Your account portal is being prepared.</h2><p>Once your FTRIVA web app is ready, you will be able to sign in here using the email address from your purchase.</p><a style='color:#a8b8a0' href='/'>Return to FTRIVA</a></main></body></html>",
+        { status: 503, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
+      );
+    }
+
     if (url.pathname.startsWith("/api/")) {
       try {
         const response = await handleApi(request, env);

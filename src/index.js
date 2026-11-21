@@ -1,7 +1,7 @@
 /**
  * FTRIVA WEBSITE CLOUDFLARE WORKER
  * Uses the separate FTRIVA Website Supabase project.
- * Secrets: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ * Secrets: PAYSTACK_SECRET_KEY, SUPABASE_SECRET_KEY (legacy SUPABASE_SERVICE_ROLE_KEY also supported)
  * Monthly plan variables: PAYSTACK_PLAN_ESSENTIAL, PAYSTACK_PLAN_PLUS, PAYSTACK_PLAN_ELITE
  */
 
@@ -46,9 +46,9 @@ function validEmail(value) {
 
 function getSupabaseConfig(env) {
   const url = safeText(env.SUPABASE_URL, 300).replace(/\/+$/, "");
-  const key = safeText(env.SUPABASE_SERVICE_ROLE_KEY, 1000);
+  const key = safeText(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY, 1000);
   if (!url || !key) {
-    throw new Error("Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Cloudflare Worker Variables and Secrets.");
+    throw new Error("Supabase is not configured. Add SUPABASE_URL and the Supabase secret key as SUPABASE_SECRET_KEY in Cloudflare Worker Secrets.");
   }
   return { url, key };
 }
@@ -575,7 +575,7 @@ async function handleApi(request, env) {
       ok: true,
       service: "FTRIVA Worker",
       environment: env.ENVIRONMENT || "test",
-      supabaseConfigured: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY),
+      supabaseConfigured: Boolean(env.SUPABASE_URL && (env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY)),
       paystackConfigured: Boolean(env.PAYSTACK_SECRET_KEY),
       timestamp: new Date().toISOString()
     });

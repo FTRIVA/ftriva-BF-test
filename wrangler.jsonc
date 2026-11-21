@@ -23,7 +23,7 @@
   "vars": {
     "ENVIRONMENT": "test",
     "SUPABASE_URL": "https://jygjaxsztnmgykzhukdx.supabase.co",
-    "PAYSTACK_PLAN_ESSENTIAL": "PLN_xn18tbtoq11ft",
+    "PAYSTACK_PLAN_ESSENTIAL": "PLN_xn18tbtoq11ftll",
     "PAYSTACK_PLAN_PLUS": "PLN_xqfeamf436nwscj",
     "PAYSTACK_PLAN_ELITE": "PLN_4qgvwhs6xus1wnb"
   }

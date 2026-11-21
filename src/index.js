@@ -44,6 +44,103 @@ function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value || "");
 }
 
+function validateAssessmentPayload(assessment) {
+  const personal = assessment?.personal || {};
+  const goals = assessment?.goals || {};
+  const training = assessment?.trainingHistory || {};
+  const activity = assessment?.currentActivity || {};
+  const health = assessment?.health || {};
+  const equipment = assessment?.equipment || {};
+  const schedule = assessment?.schedule || {};
+  const consents = assessment?.consents || {};
+
+  const required = [
+    personal.fullName, personal.dateOfBirth, personal.email, personal.phone,
+    personal.country, personal.communication, personal.under18,
+    goals.primary, training.structured, training.experience,
+    activity.activityLevel, health.injuryOrPain, health.warningSymptoms,
+    equipment.environment, schedule.sessions, schedule.duration,
+    assessment.startDatePreference, assessment.startDate
+  ];
+  if (required.some(value => !safeText(String(value ?? ""), 500))) {
+    throw new Error("Please complete all required assessment fields.");
+  }
+  if (!validEmail(safeText(personal.email, 254))) {
+    throw new Error("Please provide a valid assessment email address.");
+  }
+  if (!safeText(personal.fullName, 120) || safeText(personal.phone, 40).length < 7) {
+    throw new Error("Please provide your full name and a valid phone number.");
+  }
+
+  const dob = safeText(personal.dateOfBirth, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    throw new Error("Please provide a valid date of birth.");
+  }
+  const dobDate = new Date(dob + "T00:00:00.000Z");
+  if (Number.isNaN(dobDate.getTime()) || dobDate.toISOString().slice(0, 10) !== dob) {
+    throw new Error("Please provide a valid date of birth.");
+  }
+
+  const todayParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Johannesburg",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const part = type => todayParts.find(item => item.type === type)?.value || "";
+  const today = part("year") + "-" + part("month") + "-" + part("day");
+  if (dob > today) throw new Error("Date of birth cannot be in the future.");
+
+  let age = Number(part("year")) - Number(dob.slice(0, 4));
+  const birthMonth = Number(dob.slice(5, 7));
+  const birthDay = Number(dob.slice(8, 10));
+  if (Number(part("month")) < birthMonth || (Number(part("month")) === birthMonth && Number(part("day")) < birthDay)) age--;
+
+  const isMinor = age < 18;
+  if (!["yes", "no"].includes(personal.under18) || (personal.under18 === "yes") !== isMinor) {
+    throw new Error("The under-18 answer must match the date of birth provided.");
+  }
+
+  const consentGiven = value => value === "yes" || value === true;
+  if (!consentGiven(consents.accurate) || !consentGiven(consents.privacy) || !consentGiven(consents.onlineScope)) {
+    throw new Error("Please confirm the accuracy, privacy and online-service consent statements before submitting.");
+  }
+
+  if (isMinor) {
+    if (
+      !safeText(personal.guardianName, 120) ||
+      !validEmail(safeText(personal.guardianEmail, 254)) ||
+      personal.guardianConsent !== true ||
+      !consentGiven(consents.guardian)
+    ) {
+      throw new Error("For a client under 18, parent/guardian details and consent are required.");
+    }
+  }
+
+  const startPreference = safeText(assessment.startDatePreference, 40);
+  if (startPreference === "specific_date") {
+    const requestedDate = safeText(assessment.startDate, 10);
+    const requestedDateValue = new Date(requestedDate + "T00:00:00.000Z");
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ||
+      Number.isNaN(requestedDateValue.getTime()) ||
+      requestedDateValue.toISOString().slice(0, 10) !== requestedDate ||
+      requestedDate < today
+    ) {
+      throw new Error("Please choose a valid programme start date that is today or later.");
+    }
+  } else if (!["as_soon_as_available", "within_7_days", "within_14_days", "within_30_days"].includes(startPreference)) {
+    throw new Error("Please choose a valid programme start preference.");
+  }
+
+  const requiresManualReview =
+    String(health.warningSymptoms).toLowerCase() !== "no" ||
+    String(health.injuryOrPain).toLowerCase() === "yes" ||
+    Boolean(safeText(health.restrictions, 1200));
+
+  return { isMinor, requiresManualReview };
+}
+
 function getSupabaseConfig(env) {
   const url = safeText(env.SUPABASE_URL, 300).replace(/\/+$/, "");
   const key = safeText(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY, 1000);
@@ -308,7 +405,7 @@ async function savePurchase(payment, packageId, env) {
   );
 }
 
-async function savePaidAssessment(payment, packageId, assessment, env) {
+async function savePaidAssessment(payment, packageId, assessment, env, assessmentValidation) {
   const assessmentEmail = safeText(assessment?.personal?.email, 254).toLowerCase();
   const paymentEmail = safeText(payment.customer?.email, 254).toLowerCase();
   if (!validEmail(assessmentEmail)) {
@@ -325,7 +422,7 @@ async function savePaidAssessment(payment, packageId, assessment, env) {
     customer_email: customerEmail,
     assessment_data: assessment,
     requested_start_date: safeText(assessment.startDate, 40) || null,
-    status: "assessment_submitted",
+    status: assessmentValidation?.requiresManualReview ? "under_review" : "assessment_submitted",
     submitted_at: new Date().toISOString()
   };
 
@@ -547,6 +644,13 @@ async function handleAssessmentSubmit(request, env) {
     return json({ error: "Assessment data is missing." }, 400);
   }
 
+  let assessmentValidation;
+  try {
+    assessmentValidation = validateAssessmentPayload(assessment);
+  } catch (error) {
+    return json({ error: error.message || "The assessment is incomplete." }, 400);
+  }
+
   if (body.claimToken) {
     try {
       await submitFounding10Assessment(body.claimToken, assessment, env);
@@ -572,7 +676,7 @@ async function handleAssessmentSubmit(request, env) {
     // Ensure a verified purchase exists before inserting the assessment because
     // the assessments table references ftriva_purchases.payment_reference.
     await savePurchase(payment, packageId, env);
-    await savePaidAssessment(payment, packageId, assessment, env);
+    await savePaidAssessment(payment, packageId, assessment, env, assessmentValidation);
     return json({ submitted: true, message: "Your assessment has been submitted successfully." });
   } catch (error) {
     return json({

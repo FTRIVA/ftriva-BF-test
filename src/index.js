@@ -153,6 +153,70 @@ function verifyAmountAndCurrency(payment, packageId, packageInfo) {
   }
 }
 
+async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
+  const packageInfo = PACKAGES[packageId];
+  if (!packageInfo || packageInfo.type !== "monthly") return null;
+
+  const customerId = safeText(payment.customer?.id, 40);
+  const customerEmail = safeText(payment.customer?.email, 254).toLowerCase();
+  const planCode = safeText(payment.plan_object?.plan_code || payment.plan?.plan_code, 160);
+  const planId = safeText(payment.plan_object?.id || payment.plan?.id, 40);
+  if (!customerId || !validEmail(customerEmail) || !planCode || !planId) {
+    throw new Error("The verified monthly payment does not contain enough Paystack customer and plan details to reconcile its subscription.");
+  }
+  if (planCode !== safeText(env[packageInfo.planEnv], 160)) {
+    throw new Error("The verified monthly payment plan does not match the configured FTRIVA membership plan.");
+  }
+
+  const query = new URLSearchParams({
+    customer: customerId,
+    plan: planId,
+    perPage: "100",
+    page: "1"
+  });
+  const subscriptions = await paystackRequest(`/subscription?${query.toString()}`, env.PAYSTACK_SECRET_KEY);
+  const paymentTime = Date.parse(payment.paid_at || payment.paidAt || payment.created_at || payment.createdAt || "");
+  const expectedDomain = (env.ENVIRONMENT || "test").toLowerCase() === "production" ? "live" : "test";
+  const matches = (Array.isArray(subscriptions) ? subscriptions : []).filter(subscription => {
+    const email = safeText(subscription.customer?.email, 254).toLowerCase();
+    const candidatePlan = safeText(subscription.plan?.plan_code, 160);
+    const domain = safeText(subscription.domain, 20).toLowerCase();
+    const createdAt = Date.parse(subscription.createdAt || "");
+    return email === customerEmail &&
+      candidatePlan === planCode &&
+      domain === expectedDomain &&
+      safeText(subscription.status, 40).toLowerCase() === "active" &&
+      Number.isFinite(paymentTime) &&
+      Number.isFinite(createdAt) &&
+      Math.abs(createdAt - paymentTime) <= 36 * 60 * 60 * 1000;
+  }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+
+  const subscription = matches[0];
+  if (!subscription?.subscription_code) {
+    throw new Error("Paystack has verified the membership payment, but its matching active subscription is not available yet. The webhook can retry safely; do not pay again.");
+  }
+
+  await supabaseRequest("/rest/v1/ftriva_memberships?on_conflict=paystack_subscription_code", env, {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      customer_email: customerEmail,
+      package_id: packageId,
+      paystack_customer_code: safeText(subscription.customer?.customer_code, 160) || safeText(payment.customer?.customer_code, 160) || null,
+      paystack_subscription_code: safeText(subscription.subscription_code, 160),
+      paystack_email_token: safeText(subscription.email_token, 300) || null,
+      paystack_plan_code: planCode,
+      amount: Number(subscription.amount || subscription.plan?.amount || packageInfo.amount),
+      currency: safeText(subscription.plan?.currency, 8) || "ZAR",
+      status: safeText(subscription.status, 40).toLowerCase(),
+      start_date: subscription.createdAt || new Date().toISOString(),
+      next_payment_date: subscription.next_payment_date || null,
+      raw_paystack_data: subscription
+    })
+  });
+  return subscription.subscription_code;
+}
+
 async function savePurchase(payment, packageId, env) {
   const packageInfo = PACKAGES[packageId];
   const customerEmail = safeText(payment.customer?.email, 254).toLowerCase();
@@ -306,6 +370,9 @@ async function handlePaymentVerify(request, env) {
 
     try {
       await savePurchase(payment, packageId, env);
+      if (packageInfo.type === "monthly") {
+        await syncMembershipFromVerifiedPayment(payment, packageId, env);
+      }
     } catch (error) {
       return json({
         verified: true,
@@ -509,7 +576,11 @@ async function handlePaystackWebhook(request, env) {
         if (packageInfo) {
           verifyAmountAndCurrency(payment, packageId, packageInfo);
           await savePurchase(payment, packageId, env);
-          if (isNewEvent && packageInfo.type !== "monthly") await sendSignupNotification(env, "paid programme");
+          if (packageInfo.type === "monthly") {
+            await syncMembershipFromVerifiedPayment(payment, packageId, env);
+          } else if (isNewEvent) {
+            await sendSignupNotification(env, "paid programme");
+          }
         }
       }
     } else if (eventType === "subscription.create") {

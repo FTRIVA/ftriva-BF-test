@@ -1,33 +1,39 @@
-FTRIVA BLACK FRIDAY PRE-LAUNCH CHECKLIST
+FTRIVA WEBSITE — BUILD, TEST AND LAUNCH STATUS
+Last reviewed: 21 November 2026
+Scope: WEBSITE ONLY. The customer web app is intentionally parked.
 
-CODE / DEPLOYMENT
-[ ] Deploy the digital-delivery-test branch to the separate ftriva-test Cloudflare Worker only.
-[ ] Confirm /api/health reports environment=test and both Supabase and Paystack configured.
-[ ] Confirm /my-account shows the branded portal-preparation page until the web app is deployed.
-[ ] Check mobile navigation, page links, forms, package pricing and package descriptions.
+COMPLETED
+[x] Website source is maintained on the digital-delivery-test branch.
+[x] Cloudflare build trigger now watches digital-delivery-test (not main).
+[x] Latest Cloudflare build completed successfully and deployed to the ftriva-test Worker.
+[x] Test Worker has ASSETS, EMAIL, Supabase and Paystack bindings; ENVIRONMENT=test.
+[x] Correct ESSENTIAL Paystack test plan code is PLN_xn18tbtoq11ftll.
+[x] GitHub CI passed: Worker/browser JavaScript syntax plus 10-page website smoke checks.
+[x] Automated checks cover all 10 pages, seven package prices, three membership plan codes, local links/assets, mobile metadata, brand palette, required API routes and public-secret exposure.
+[x] User previously confirmed 8/8 manual website checks. Those checks pre-date the latest deployment, so repeat the final browser check once after this build.
+[x] Supabase purchase, membership, assessment and Paystack-event tables are present. One ESSENTIAL test membership is active and linked to a purchase.
+[x] Founding 10 claim and assessment RPCs are installed. No claims have been made; Dad's first place remains protected.
+[x] Database customer-sync triggers are enabled. Security advisor shows no critical function-execution exposure; RLS is enabled on private customer tables.
 
-PAYMENTS
-[ ] Confirm package descriptions/inclusions and prices.
-[ ] Confirm the FTRIVA Website Supabase project and schema are correct.
-[ ] Confirm all Worker secrets are test credentials (SUPABASE_SECRET_KEY and PAYSTACK_SECRET_KEY).
-[ ] Confirm the three Paystack monthly plans are monthly and match R249/R399/R599.
-[ ] Configure the Paystack webhook URL and subscribe to charge.success and subscription.create plus relevant subscription lifecycle events.
-[ ] Test START R199, PROGRESS R399, PERFORMANCE R299 and DIGITAL R49 using Paystack test mode.
-[ ] Test payment success, cancellation/failure, callback recovery and duplicate webhook delivery.
-[ ] Test ESSENTIAL R249/month, PLUS R399/month and ELITE R599/month; confirm subscription creation and lifecycle updates.
-[ ] Test Founding 10: 10 distinct emails succeed, the 11th fails, duplicate email fails, and memberships are ineligible.
-[ ] Test Founding 10 assessment flow for START/PROGRESS/PERFORMANCE and the no-assessment DIGITAL claim.
-[ ] Test paid assessments are saved once and linked to the correct verified payment and package.
-[ ] Confirm customer profile, purchase, product-access and email-outbox records are correctly linked after each test.
+WEBSITE DELIVERY MODEL
+- The website can sell once-off programmes and memberships without the web app if FTRIVA fulfils programmes electronically by email/secure link and manages support manually.
+- My FTRIVA Account remains a clearly labelled preparation page. Do not set FTRIVA_APP_URL yet.
+- Payment confirmation copy now explains electronic/manual fulfilment and does not promise web-app login instructions.
+- Do not advertise automated customer emails until Gmail API delivery is configured and tested.
 
-EMAILS / CUSTOMER ACCOUNTS
-[ ] Customer confirmation emails are NOT sent yet. Gmail API OAuth + Worker outbox sender still need implementation and testing.
-[ ] Do not configure Cloudflare Email Service as the customer email sender; the chosen customer sender is ftrivafitness@gmail.com via Gmail API.
-[ ] Cloudflare Email binding is only for optional generic internal sign-up alerts from notifications@ftriva.com; domain onboarding is optional for the core purchase flow.
-[ ] The My FTRIVA Account destination is a placeholder until the customer web app is built and deployed.
-[ ] Do not set FTRIVA_APP_URL until the real HTTPS web-app URL exists.
+REMAINING WEBSITE LAUNCH BLOCKERS
+[ ] Upload the approved DIGITAL PDF and XLSX into the private ftriva-digital-test bucket. It is currently empty.
+[ ] Complete Gmail API OAuth with gmail.send only, configure encrypted Worker secrets, implement/enable the outbox sender, and test delivery. Customer email outbox currently contains pending messages; do not release old test messages to customers.
+[ ] Confirm a workable manual fulfilment process for START, PROGRESS, PERFORMANCE, DIGITAL and monthly memberships until account/app delivery exists.
+[ ] Review the privacy notice and POPIA cross-border safeguards. The website Supabase database is hosted in EU Central (Frankfurt).
+[ ] Finish final post-deployment browser testing of the test site, checkout screens, assessment, Founding 10, and mobile navigation. Do not make another payment just to repeat the existing ESSENTIAL test.
+[ ] Confirm PLUS and ELITE subscription flows and subscription lifecycle handling. ESSENTIAL has one active test subscription; do not cancel or repay it.
+[ ] Create/configure the production Worker with separate LIVE Paystack credentials and production configuration only after test sign-off.
+[ ] Attach ftriva.com to the new production Worker only after explicit launch approval. It is currently attached to the older calm-mud-1eb0 Worker, which has no application bindings.
+[ ] Verify production DNS, SSL, live Paystack plans and live webhook after the production Worker is configured.
 
-PRIVACY / GO-LIVE
-[ ] Review privacy notice, POPIA requirements and cross-border processing safeguards (Supabase is hosted in EU Central / Frankfurt).
-[ ] Confirm digital files are stored in a private bucket and are only delivered after server-side entitlement checks; files have not yet been uploaded.
-[ ] Only after test cases pass, configure separate live credentials and deploy the live Worker/site.
+DO NOT
+- Do not switch the test Worker to live keys.
+- Do not deploy to or repoint ftriva.com without explicit approval.
+- Do not send the queued test outbox messages as if they were new customer messages.
+- Do not build or configure the web app as part of this website-only phase.

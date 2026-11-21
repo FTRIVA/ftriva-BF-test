@@ -185,13 +185,15 @@ async function savePurchase(payment, packageId, env) {
 }
 
 async function savePaidAssessment(payment, packageId, assessment, env) {
-  const customerEmail = safeText(
-    payment.customer?.email || assessment?.personal?.email,
-    254
-  ).toLowerCase();
-  if (!validEmail(customerEmail)) {
-    throw new Error("A valid customer email address is required in the assessment.");
+  const assessmentEmail = safeText(assessment?.personal?.email, 254).toLowerCase();
+  const paymentEmail = safeText(payment.customer?.email, 254).toLowerCase();
+  if (!validEmail(assessmentEmail)) {
+    throw new Error("A valid email address is required in the assessment.");
   }
+  if (paymentEmail && assessmentEmail !== paymentEmail) {
+    throw new Error("The assessment email must match the email address used for the verified Paystack payment.");
+  }
+  const customerEmail = paymentEmail || assessmentEmail;
 
   const record = {
     payment_reference: payment.reference,

@@ -10,6 +10,6 @@ FTRIVA BLACK FRIDAY PRE-LAUNCH CHECKLIST
 [ ] Test Founding 10: 10 different emails succeed; 11th fails; duplicate email fails.
 [ ] Test free claim proceeds to assessment without payment/card details.
 [ ] Test assessment is saved and linked to correct package/payment or claim.
-[ ] Test WhatsApp notification (only after approved template and credentials configured).
+[ ] Complete Cloudflare Email Service domain onboarding and verify the generic sign-up email for paid purchases, memberships and Founding 10 claims.
 [ ] Verify mobile layouts and links.
 [ ] Only after all tests pass, configure live Paystack secret and deploy live.

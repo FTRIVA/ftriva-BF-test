@@ -105,6 +105,7 @@ begin
       submitted_at = now()
   where claim_token_hash = p_claim_token_hash
     and status = 'claimed'
+    and lower(email) = lower(trim(coalesce(p_assessment->'personal'->>'email', '')))
   returning * into v_claim;
 
   if not found then

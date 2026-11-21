@@ -62,6 +62,11 @@ async function supabaseRequest(path, env, options = {}) {
   const { url, key } = getSupabaseConfig(env);
   const headers = new Headers(options.headers || {});
   headers.set("apikey", key);
+  // Legacy Supabase service_role JWTs must also be supplied as the database
+  // Authorization token. New sb_secret_ keys are API keys and are not JWTs.
+  if (!key.startsWith("sb_secret_") && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${key}`);
+  }
   if (!headers.has("content-type") && options.body !== undefined) {
     headers.set("content-type", "application/json");
   }

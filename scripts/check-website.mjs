@@ -23,6 +23,7 @@ const app = read('public/app.js');
 const worker = read('src/index.js');
 const programmes = read('public/programmes.html');
 const memberships = read('public/memberships.html');
+const assessmentPage = read('public/assessment.html');
 const css = read('public/styles.css');
 const wrangler = read('wrangler.jsonc');
 const publicFiles = pages.map(page => read('public/' + page)).join('\n') + app;
@@ -76,6 +77,10 @@ for (const route of [
 ]) assert.ok(worker.includes(route), 'Missing Worker API route: ' + route);
 assert.ok(app.includes('ftriva_founding10_claim'), 'Founding 10 claim handoff missing');
 assert.ok(app.includes('ftriva_verified_reference'), 'Payment verification handoff missing');
+assert.ok(worker.includes('validateAssessmentPayload'), 'Server-side assessment validation missing');
+assert.ok(worker.includes('under_review'), 'Manual safety review status missing');
+assert.ok(app.includes('desiredStartDate.min=localDate'), 'Assessment start-date minimum must be dynamic');
+assert.ok(!assessmentPage.includes('min="2026-11-17"'), 'Assessment page contains a stale hard-coded date minimum');
 assert.ok(worker.includes('membershipRecorded: false'), 'Membership-pending state missing from payment verification');
 assert.ok(app.includes('result.membershipRecorded===false'), 'Membership-pending state missing from customer callback');
 assert.ok(!/(?:sk_(?:live|test)_|sb_secret_)/i.test(publicFiles), 'Server-side secret appears in public website assets');

@@ -159,9 +159,14 @@ async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
 
   const customerId = safeText(String(payment.customer?.id || ""), 40);
   const customerEmail = safeText(payment.customer?.email, 254).toLowerCase();
-  const planCode = safeText(payment.plan_object?.plan_code || payment.plan?.plan_code, 160);
-  const planId = safeText(String(payment.plan_object?.id || payment.plan?.id || ""), 40);
-  if (!customerId || !validEmail(customerEmail) || !planCode || !planId) {
+  const planCode = safeText(
+    payment.plan_object?.plan_code ||
+    payment.plan?.plan_code ||
+    (typeof payment.plan === "string" ? payment.plan : "") ||
+    env[packageInfo.planEnv],
+    160
+  );
+  if (!customerId || !validEmail(customerEmail) || !planCode) {
     throw new Error("The verified monthly payment does not contain enough Paystack customer and plan details to reconcile its subscription.");
   }
   if (planCode !== safeText(env[packageInfo.planEnv], 160)) {
@@ -177,7 +182,10 @@ async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
   // Prefer a newly-created subscription associated with this initial payment.
   // Paystack does not create a new subscription record for every recurring charge.
   try {
-    const query = new URLSearchParams({ customer: customerId, plan: planId, perPage: "100", page: "1" });
+    // Paystack's subscription list can be filtered by customer. Filter the
+    // returned records by plan_code locally; do not require a plan numeric ID
+    // to be present on the transaction verification response.
+    const query = new URLSearchParams({ customer: customerId, perPage: "100", page: "1" });
     const subscriptions = await paystackRequest(`/subscription?${query.toString()}`, env.PAYSTACK_SECRET_KEY);
     const matches = (Array.isArray(subscriptions) ? subscriptions : []).filter(candidate => {
       const email = safeText(candidate.customer?.email, 254).toLowerCase();

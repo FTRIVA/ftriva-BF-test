@@ -168,32 +168,73 @@ async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
     throw new Error("The verified monthly payment plan does not match the configured FTRIVA membership plan.");
   }
 
-  const query = new URLSearchParams({
-    customer: customerId,
-    plan: planId,
-    perPage: "100",
-    page: "1"
-  });
-  const subscriptions = await paystackRequest(`/subscription?${query.toString()}`, env.PAYSTACK_SECRET_KEY);
-  const paymentTime = Date.parse(payment.paid_at || payment.paidAt || payment.created_at || payment.createdAt || "");
   const expectedDomain = (env.ENVIRONMENT || "test").toLowerCase() === "production" ? "live" : "test";
-  const matches = (Array.isArray(subscriptions) ? subscriptions : []).filter(subscription => {
-    const email = safeText(subscription.customer?.email, 254).toLowerCase();
-    const candidatePlan = safeText(subscription.plan?.plan_code, 160);
-    const domain = safeText(subscription.domain, 20).toLowerCase();
-    const createdAt = Date.parse(subscription.createdAt || "");
-    return email === customerEmail &&
-      candidatePlan === planCode &&
-      domain === expectedDomain &&
-      safeText(subscription.status, 40).toLowerCase() === "active" &&
-      Number.isFinite(paymentTime) &&
-      Number.isFinite(createdAt) &&
-      Math.abs(createdAt - paymentTime) <= 36 * 60 * 60 * 1000;
-  }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const paymentTime = Date.parse(payment.paid_at || payment.paidAt || payment.created_at || payment.createdAt || "");
+  const eventSubscriptionCode = safeText(payment.subscription_code || payment.subscription?.subscription_code, 160);
+  let subscription = null;
+  let subscriptionLookupError = null;
 
-  const subscription = matches[0];
-  if (!subscription?.subscription_code) {
-    throw new Error("Paystack has verified the membership payment, but its matching active subscription is not available yet. The webhook can retry safely; do not pay again.");
+  // Prefer a newly-created subscription associated with this initial payment.
+  // Paystack does not create a new subscription record for every recurring charge.
+  try {
+    const query = new URLSearchParams({ customer: customerId, plan: planId, perPage: "100", page: "1" });
+    const subscriptions = await paystackRequest(`/subscription?${query.toString()}`, env.PAYSTACK_SECRET_KEY);
+    const matches = (Array.isArray(subscriptions) ? subscriptions : []).filter(candidate => {
+      const email = safeText(candidate.customer?.email, 254).toLowerCase();
+      const candidatePlan = safeText(candidate.plan?.plan_code, 160);
+      const domain = safeText(candidate.domain, 20).toLowerCase();
+      const createdAt = Date.parse(candidate.createdAt || "");
+      return email === customerEmail &&
+        candidatePlan === planCode &&
+        domain === expectedDomain &&
+        safeText(candidate.status, 40).toLowerCase() === "active" &&
+        Number.isFinite(paymentTime) &&
+        Number.isFinite(createdAt) &&
+        Math.abs(createdAt - paymentTime) <= 36 * 60 * 60 * 1000;
+    }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    subscription = matches[0] || null;
+  } catch (error) {
+    subscriptionLookupError = error;
+  }
+
+  // For renewals, reuse the already-verified membership record instead of
+  // incorrectly requiring the original subscription creation date to be recent.
+  if (!subscription) {
+    const existingRows = await supabaseRequest(
+      `/rest/v1/ftriva_memberships?customer_email=eq.${encodeURIComponent(customerEmail)}&package_id=eq.${encodeURIComponent(packageId)}&status=in.(active,non_renewing,attention,past_due)&select=paystack_subscription_code,status&order=created_at.desc&limit=10`,
+      env
+    );
+    const usableRows = Array.isArray(existingRows)
+      ? existingRows.filter(row => safeText(row.paystack_subscription_code, 160))
+      : [];
+    let existing = null;
+    if (eventSubscriptionCode) {
+      existing = usableRows.find(row => row.paystack_subscription_code === eventSubscriptionCode) || null;
+    }
+    if (!existing && usableRows.length === 1) existing = usableRows[0];
+    if (!existing && usableRows.length > 1) {
+      throw new Error("More than one active FTRIVA membership matches this customer and plan. The payment was recorded, but subscription reconciliation needs manual review.");
+    }
+    if (!existing) {
+      if (subscriptionLookupError) throw subscriptionLookupError;
+      throw new Error("Paystack has verified the membership payment, but its matching active subscription is not available yet. The webhook can retry safely; do not pay again.");
+    }
+
+    await supabaseRequest(
+      `/rest/v1/ftriva_purchases?payment_reference=eq.${encodeURIComponent(payment.reference)}`,
+      env,
+      {
+        method: "PATCH",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify({ paystack_subscription_code: existing.paystack_subscription_code })
+      }
+    );
+    return existing.paystack_subscription_code;
+  }
+
+  const subscriptionCode = safeText(subscription.subscription_code, 160);
+  if (!subscriptionCode) {
+    throw new Error("Paystack returned a matching subscription without a subscription code.");
   }
 
   await supabaseRequest("/rest/v1/ftriva_memberships?on_conflict=paystack_subscription_code", env, {
@@ -203,7 +244,7 @@ async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
       customer_email: customerEmail,
       package_id: packageId,
       paystack_customer_code: safeText(subscription.customer?.customer_code, 160) || safeText(payment.customer?.customer_code, 160) || null,
-      paystack_subscription_code: safeText(subscription.subscription_code, 160),
+      paystack_subscription_code: subscriptionCode,
       paystack_email_token: safeText(subscription.email_token, 300) || null,
       paystack_plan_code: planCode,
       amount: Number(subscription.amount || subscription.plan?.amount || packageInfo.amount),
@@ -214,7 +255,18 @@ async function syncMembershipFromVerifiedPayment(payment, packageId, env) {
       raw_paystack_data: subscription
     })
   });
-  return subscription.subscription_code;
+
+  // Keep every successful monthly payment linked to the recurring subscription.
+  await supabaseRequest(
+    `/rest/v1/ftriva_purchases?payment_reference=eq.${encodeURIComponent(payment.reference)}`,
+    env,
+    {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ paystack_subscription_code: subscriptionCode })
+    }
+  );
+  return subscriptionCode;
 }
 
 async function savePurchase(payment, packageId, env) {

@@ -1,16 +1,33 @@
 FTRIVA BLACK FRIDAY PRE-LAUNCH CHECKLIST
+
+CODE / DEPLOYMENT
+[ ] Deploy the digital-delivery-test branch to the separate ftriva-test Cloudflare Worker only.
+[ ] Confirm /api/health reports environment=test and both Supabase and Paystack configured.
+[ ] Confirm /my-account shows the branded portal-preparation page until the web app is deployed.
+[ ] Check mobile navigation, page links, forms, package pricing and package descriptions.
+
+PAYMENTS
 [ ] Confirm package descriptions/inclusions and prices.
-[ ] Apply FOUNDER_10_SETUP.sql to the correct Supabase project.
-[ ] Confirm ftriva_assessments schema matches the Worker insert fields.
-[ ] Configure Cloudflare Worker secrets/variables from CLOUDFLARE_SECRETS_CHECKLIST.txt.
-[ ] Configure three Paystack monthly plans at R249/R399/R599.
-[ ] Confirm the Paystack webhook URL and required event subscriptions are configured.
-[ ] Test every package selection and correct amount using Paystack test mode.
-[ ] Test payment success and failure callbacks.
-[ ] Test Founding 10: 10 different emails succeed; 11th fails; duplicate email fails.
-[ ] Test free claim proceeds to assessment without payment/card details.
-[ ] Test assessment is saved and linked to correct package/payment or claim.
-[ ] Complete Cloudflare Email Service domain onboarding and verify the generic sign-up email for paid purchases, memberships and Founding 10 claims.
-[ ] Review the privacy notice, POPIA requirements and cross-border processing safeguards (Supabase is hosted in EU Central / Frankfurt) before collecting client data.
-[ ] Verify mobile layouts and links.
-[ ] Only after all tests pass, configure live Paystack secret and deploy live.
+[ ] Confirm the FTRIVA Website Supabase project and schema are correct.
+[ ] Confirm all Worker secrets are test credentials (SUPABASE_SECRET_KEY and PAYSTACK_SECRET_KEY).
+[ ] Confirm the three Paystack monthly plans are monthly and match R249/R399/R599.
+[ ] Configure the Paystack webhook URL and subscribe to charge.success and subscription.create plus relevant subscription lifecycle events.
+[ ] Test START R199, PROGRESS R399, PERFORMANCE R299 and DIGITAL R49 using Paystack test mode.
+[ ] Test payment success, cancellation/failure, callback recovery and duplicate webhook delivery.
+[ ] Test ESSENTIAL R249/month, PLUS R399/month and ELITE R599/month; confirm subscription creation and lifecycle updates.
+[ ] Test Founding 10: 10 distinct emails succeed, the 11th fails, duplicate email fails, and memberships are ineligible.
+[ ] Test Founding 10 assessment flow for START/PROGRESS/PERFORMANCE and the no-assessment DIGITAL claim.
+[ ] Test paid assessments are saved once and linked to the correct verified payment and package.
+[ ] Confirm customer profile, purchase, product-access and email-outbox records are correctly linked after each test.
+
+EMAILS / CUSTOMER ACCOUNTS
+[ ] Customer confirmation emails are NOT sent yet. Gmail API OAuth + Worker outbox sender still need implementation and testing.
+[ ] Do not configure Cloudflare Email Service as the customer email sender; the chosen customer sender is ftrivafitness@gmail.com via Gmail API.
+[ ] Cloudflare Email binding is only for optional generic internal sign-up alerts from notifications@ftriva.com; domain onboarding is optional for the core purchase flow.
+[ ] The My FTRIVA Account destination is a placeholder until the customer web app is built and deployed.
+[ ] Do not set FTRIVA_APP_URL until the real HTTPS web-app URL exists.
+
+PRIVACY / GO-LIVE
+[ ] Review privacy notice, POPIA requirements and cross-border processing safeguards (Supabase is hosted in EU Central / Frankfurt).
+[ ] Confirm digital files are stored in a private bucket and are only delivered after server-side entitlement checks; files have not yet been uploaded.
+[ ] Only after test cases pass, configure separate live credentials and deploy the live Worker/site.

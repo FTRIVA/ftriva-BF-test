@@ -14,7 +14,7 @@ create table if not exists public.ftriva_founding10_claims (
   status text not null default 'claimed'
     check (status in ('claimed','assessment_submitted','cancelled')),
   assessment_data jsonb,
-  claimed_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
   submitted_at timestamptz
 );
 
@@ -138,3 +138,12 @@ revoke all on function public.claim_ftriva_founding10(text,text,text,text,text) 
 revoke all on function public.submit_ftriva_founding10_assessment(text,jsonb) from public, anon, authenticated;
 grant execute on function public.claim_ftriva_founding10(text,text,text,text,text) to service_role;
 grant execute on function public.submit_ftriva_founding10_assessment(text,jsonb) to service_role;
+
+-- The Supabase helper is not required to be callable by API roles.
+do $$
+begin
+  if to_regprocedure('public.rls_auto_enable()') is not null then
+    execute 'revoke all on function public.rls_auto_enable() from public, anon, authenticated';
+  end if;
+end;
+$$;

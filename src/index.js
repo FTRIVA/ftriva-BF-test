@@ -442,7 +442,6 @@ async function handlePaymentVerify(request, env) {
       amount: payment.amount,
       currency: payment.currency,
       package: packageId,
-      customer: safeText(payment.customer?.email, 254)
     });
   } catch (error) {
     return json({ verified: false, error: error.message || "Payment verification failed." }, error.status || 400);

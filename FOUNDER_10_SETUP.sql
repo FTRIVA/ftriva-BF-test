@@ -30,6 +30,11 @@ alter table public.ftriva_assessments
   add column if not exists founding10_claim_id uuid
   references public.ftriva_founding10_claims(id);
 
+-- Free Founding 10 assessments have no Paystack payment reference.
+-- Keep this field nullable while paid assessments continue to populate it.
+alter table public.ftriva_assessments
+  alter column payment_reference drop not null;
+
 create unique index if not exists ftriva_assessments_founding10_claim_unique
   on public.ftriva_assessments (founding10_claim_id)
   where founding10_claim_id is not null;

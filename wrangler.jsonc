@@ -3,6 +3,14 @@
   "name": "ftriva-test",
   "main": "src/index.js",
   "compatibility_date": "2026-11-17",
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "remote": true,
+      "destination_address": "ftrivafitness@gmail.com",
+      "allowed_sender_addresses": ["notifications@ftriva.com"]
+    }
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

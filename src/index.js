@@ -430,9 +430,6 @@ async function handlePaymentVerify(request, env) {
 
     try {
       await savePurchase(payment, packageId, env);
-      if (packageInfo.type === "monthly") {
-        await syncMembershipFromVerifiedPayment(payment, packageId, env);
-      }
     } catch (error) {
       return json({
         verified: true,
@@ -443,9 +440,30 @@ async function handlePaymentVerify(request, env) {
       }, 503);
     }
 
+    if (packageInfo.type === "monthly") {
+      try {
+        await syncMembershipFromVerifiedPayment(payment, packageId, env);
+      } catch (error) {
+        // The purchase is already safely recorded. Keep the verified payment
+        // distinct from subscription activation so the customer is never told
+        // that a saved purchase failed or encouraged to pay a second time.
+        return json({
+          verified: true,
+          recorded: true,
+          membershipRecorded: false,
+          reference: payment.reference,
+          amount: payment.amount,
+          currency: payment.currency,
+          package: packageId,
+          error: "Your payment and purchase are recorded, but membership activation is still being reconciled. Do not pay again. FTRIVA will contact you if anything further is needed."
+        }, 202);
+      }
+    }
+
     return json({
       verified: true,
       recorded: true,
+      ...(packageInfo.type === "monthly" ? { membershipRecorded: true } : {}),
       reference: payment.reference,
       amount: payment.amount,
       currency: payment.currency,

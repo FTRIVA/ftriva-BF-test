@@ -4,7 +4,7 @@ FTRIVA BLACK FRIDAY PRE-LAUNCH CHECKLIST
 [ ] Confirm ftriva_assessments schema matches the Worker insert fields.
 [ ] Configure Cloudflare Worker secrets/variables from CLOUDFLARE_SECRETS_CHECKLIST.txt.
 [ ] Configure three Paystack monthly plans at R249/R399/R599.
-[ ] Configure/approve WhatsApp Cloud API template if admin WhatsApp alerts are wanted.
+[ ] Confirm the Paystack webhook URL and required event subscriptions are configured.
 [ ] Test every package selection and correct amount using Paystack test mode.
 [ ] Test payment success and failure callbacks.
 [ ] Test Founding 10: 10 different emails succeed; 11th fails; duplicate email fails.

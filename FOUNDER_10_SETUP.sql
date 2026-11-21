@@ -18,7 +18,7 @@ create table if not exists public.ftriva_founding10_claims (
   submitted_at timestamptz
 );
 
-create unique index if not exists ftriva_founding10_claims_email_unique
+create unique index if not exists ftriva_founding10_email_unique
   on public.ftriva_founding10_claims (lower(email));
 
 alter table public.ftriva_founding10_claims enable row level security;

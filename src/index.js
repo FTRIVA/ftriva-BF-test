@@ -1,7 +1,7 @@
 /**
  * FTRIVA WEBSITE CLOUDFLARE WORKER
  * Uses the separate FTRIVA Website Supabase project.
- * Secrets: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ * Secrets: PAYSTACK_SECRET_KEY, SUPABASE_SECRET_KEY (legacy SUPABASE_SERVICE_ROLE_KEY also supported)
  * Monthly plan variables: PAYSTACK_PLAN_ESSENTIAL, PAYSTACK_PLAN_PLUS, PAYSTACK_PLAN_ELITE
  */
 
@@ -46,9 +46,9 @@ function validEmail(value) {
 
 function getSupabaseConfig(env) {
   const url = safeText(env.SUPABASE_URL, 300).replace(/\/+$/, "");
-  const key = safeText(env.SUPABASE_SERVICE_ROLE_KEY, 1000);
+  const key = safeText(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY, 1000);
   if (!url || !key) {
-    throw new Error("Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Cloudflare Worker Variables and Secrets.");
+    throw new Error("Supabase is not configured. Add SUPABASE_URL and the Supabase secret key as SUPABASE_SECRET_KEY in Cloudflare Worker Secrets.");
   }
   return { url, key };
 }
@@ -62,6 +62,11 @@ async function supabaseRequest(path, env, options = {}) {
   const { url, key } = getSupabaseConfig(env);
   const headers = new Headers(options.headers || {});
   headers.set("apikey", key);
+  // Legacy Supabase service_role JWTs must also be supplied as the database
+  // Authorization token. New sb_secret_ keys are API keys and are not JWTs.
+  if (!key.startsWith("sb_secret_") && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${key}`);
+  }
   if (!headers.has("content-type") && options.body !== undefined) {
     headers.set("content-type", "application/json");
   }
@@ -79,6 +84,23 @@ async function supabaseRequest(path, env, options = {}) {
     throw new Error(`Supabase request failed (${response.status}): ${(detail || "Unknown error").slice(0, 500)}`);
   }
   return data;
+}
+
+async function sendSignupNotification(env, signupType) {
+  // Notifications are deliberately generic: customer details and assessment
+  // information remain in the FTRIVA Website Supabase project.
+  if (!env.EMAIL || typeof env.EMAIL.send !== "function") return;
+  try {
+    await env.EMAIL.send({
+      from: "notifications@ftriva.com",
+      to: "ftrivafitness@gmail.com",
+      subject: "New FTRIVA sign-up",
+      text: `A new FTRIVA ${signupType} has been recorded. Sign in to the FTRIVA Website Supabase project to review the full record. No customer personal or assessment information is included in this email.`
+    });
+  } catch (error) {
+    // Email failure must never undo or block a successful purchase or claim.
+    console.error("FTRIVA sign-up notification failed:", error?.code || "EMAIL_ERROR", error?.message || "Unknown email error");
+  }
 }
 
 async function paystackRequest(path, secret, body) {
@@ -126,13 +148,8 @@ function verifyAmountAndCurrency(payment, packageId, packageInfo) {
   if (!packageInfo) throw new Error("This transaction is not associated with a recognised FTRIVA package.");
   if (payment.currency !== "ZAR") throw new Error("The verified transaction currency does not match ZAR.");
   const actualAmount = Number(payment.amount);
-  if (!Number.isFinite(actualAmount) || actualAmount < packageInfo.amount) {
-    throw new Error("The verified transaction amount does not match the selected FTRIVA package.");
-  }
-  // For once-off products, require the exact Black Friday amount. Monthly
-  // Paystack plan payments are checked against their configured plan amount.
-  if (packageInfo.type !== "monthly" && actualAmount !== packageInfo.amount) {
-    throw new Error("The verified transaction amount is not the current price for this FTRIVA package.");
+  if (!Number.isFinite(actualAmount) || actualAmount !== packageInfo.amount) {
+    throw new Error("The verified transaction amount does not match the current price for this FTRIVA package.");
   }
 }
 
@@ -168,13 +185,15 @@ async function savePurchase(payment, packageId, env) {
 }
 
 async function savePaidAssessment(payment, packageId, assessment, env) {
-  const customerEmail = safeText(
-    payment.customer?.email || assessment?.personal?.email,
-    254
-  ).toLowerCase();
-  if (!validEmail(customerEmail)) {
-    throw new Error("A valid customer email address is required in the assessment.");
+  const assessmentEmail = safeText(assessment?.personal?.email, 254).toLowerCase();
+  const paymentEmail = safeText(payment.customer?.email, 254).toLowerCase();
+  if (!validEmail(assessmentEmail)) {
+    throw new Error("A valid email address is required in the assessment.");
   }
+  if (paymentEmail && assessmentEmail !== paymentEmail) {
+    throw new Error("The assessment email must match the email address used for the verified Paystack payment.");
+  }
+  const customerEmail = paymentEmail || assessmentEmail;
 
   const record = {
     payment_reference: payment.reference,
@@ -202,56 +221,21 @@ async function submitFounding10Assessment(claimToken, assessment, env) {
   if (!token) throw new Error("Your Founding 10 claim token is missing.");
   const tokenHash = await sha256(token);
 
-  const rows = await supabaseRequest(
-    `/rest/v1/ftriva_founding10_claims?claim_token_hash=eq.${encodeURIComponent(tokenHash)}&status=eq.claimed&select=id,package_id,email`,
-    env,
-    { method: "GET" }
-  );
-  if (!Array.isArray(rows) || rows.length !== 1) {
-    const error = new Error("This Founding 10 claim is invalid, expired or has already been submitted.");
-    error.status = 403;
-    throw error;
-  }
+  // The database function consumes the claim and inserts the assessment in
+  // one transaction, so a failed insert never strands a valid claim.
+  const result = await supabaseRequest("/rest/v1/rpc/submit_ftriva_founding10_assessment", env, {
+    method: "POST",
+    body: JSON.stringify({
+      p_claim_token_hash: tokenHash,
+      p_assessment: assessment
+    })
+  });
 
-  const claim = rows[0];
-  // Atomically consume the claim. Only one simultaneous submission can change
-  // its status from `claimed` to `assessment_submitted`.
-  const updated = await supabaseRequest(
-    `/rest/v1/ftriva_founding10_claims?id=eq.${encodeURIComponent(claim.id)}&status=eq.claimed`,
-    env,
-    {
-      method: "PATCH",
-      headers: { prefer: "return=representation" },
-      body: JSON.stringify({
-        assessment_data: assessment,
-        status: "assessment_submitted",
-        submitted_at: new Date().toISOString()
-      })
-    }
-  );
-  if (!Array.isArray(updated) || updated.length !== 1) {
-    const error = new Error("This Founding 10 claim has already been submitted.");
+  if (!result?.submitted) {
+    const error = new Error("This Founding 10 claim is invalid, expired or has already been submitted.");
     error.status = 409;
     throw error;
   }
-
-  // Also place the assessment in the central assessments table for the same
-  // admin workflow as paid personalised programmes. DIGITAL does not require
-  // an assessment, but a Founding 10 DIGITAL customer may submit one.
-  const email = safeText(assessment?.personal?.email || claim.email, 254).toLowerCase();
-  await supabaseRequest("/rest/v1/ftriva_assessments", env, {
-    method: "POST",
-    headers: { prefer: "return=minimal" },
-    body: JSON.stringify({
-      founding10_claim_id: claim.id,
-      package_type: claim.package_id,
-      customer_email: email,
-      assessment_data: assessment,
-      requested_start_date: safeText(assessment.startDate, 40) || null,
-      status: "assessment_submitted",
-      submitted_at: new Date().toISOString()
-    })
-  });
 }
 
 async function handlePaymentInitialize(request, env) {
@@ -400,6 +384,7 @@ async function handleFounding10Claim(request, env) {
       return json({ claimed: false, error: "The Founding 10 claim details could not be accepted." }, 400);
     }
 
+    await sendSignupNotification(env, "Founding 10 free-programme claim");
     return json({
       claimed: true,
       claimToken,
@@ -430,8 +415,10 @@ async function handleAssessmentSubmit(request, env) {
   const reference = safeText(body.paymentReference, 120);
   if (!reference) return json({ error: "A verified payment reference or Founding 10 claim is required." }, 403);
 
+  let paymentVerified = false;
   try {
     const payment = await verifyPaystack(reference, env);
+    paymentVerified = true;
     const { packageId, packageInfo } = getPackageFromPayment(payment);
     if (!packageInfo || !packageInfo.assessmentRequired) {
       return json({ error: "This purchase does not require a personalised fitness assessment." }, 403);
@@ -445,10 +432,12 @@ async function handleAssessmentSubmit(request, env) {
     return json({ submitted: true, message: "Your assessment has been submitted successfully." });
   } catch (error) {
     return json({
-      error: "Your payment may already be verified, but the assessment could not be saved. Do not pay again.",
+      error: paymentVerified
+        ? "Your payment is verified, but the assessment could not be saved. Do not pay again; contact FTRIVA."
+        : "We could not verify this payment, so the assessment was not submitted.",
       detail: error.message,
-      paymentVerified: true
-    }, error.status || 503);
+      paymentVerified
+    }, error.status || (paymentVerified ? 503 : 400));
   }
 }
 
@@ -497,9 +486,9 @@ async function handlePaystackWebhook(request, env) {
 
   // Keep an auditable, idempotent event record. A repeated webhook uses the
   // same SHA-256 event key and cannot create duplicate event rows.
-  await supabaseRequest("/rest/v1/ftriva_paystack_events?on_conflict=event_key", env, {
+  const eventRows = await supabaseRequest("/rest/v1/ftriva_paystack_events?on_conflict=event_key", env, {
     method: "POST",
-    headers: { prefer: "resolution=ignore-duplicates,return=minimal" },
+    headers: { prefer: "resolution=ignore-duplicates,return=representation" },
     body: JSON.stringify({
       event_key: eventKey,
       event_type: eventType,
@@ -508,9 +497,22 @@ async function handlePaystackWebhook(request, env) {
       processing_status: "received"
     })
   });
+  const isNewEvent = Array.isArray(eventRows) && eventRows.length === 1;
 
   try {
-    if (eventType === "subscription.create") {
+    if (eventType === "charge.success") {
+      const reference = safeText(data.reference, 160);
+      if (reference) {
+        const payment = await verifyPaystack(reference, env);
+        const { packageId, packageInfo } = getPackageFromPayment(payment);
+        // Ignore successful transactions that do not belong to a FTRIVA package.
+        if (packageInfo) {
+          verifyAmountAndCurrency(payment, packageId, packageInfo);
+          await savePurchase(payment, packageId, env);
+          if (isNewEvent && packageInfo.type !== "monthly") await sendSignupNotification(env, "paid programme");
+        }
+      }
+    } else if (eventType === "subscription.create") {
       const planCode = safeText(data.plan?.plan_code || data.plan_code, 160);
       const packageId = membershipPackageForPlan(planCode, env);
       const email = safeText(data.customer?.email || data.email, 254).toLowerCase();
@@ -534,6 +536,7 @@ async function handlePaystackWebhook(request, env) {
             raw_paystack_data: data
           })
         });
+        if (isNewEvent) await sendSignupNotification(env, "new monthly membership");
       }
     } else if (["subscription.disable", "subscription.not_renew", "invoice.payment_failed"].includes(eventType) && subscriptionCode) {
       const nextStatus = eventType === "subscription.disable" ? "cancelled" : eventType === "subscription.not_renew" ? "non_renewing" : "attention";
@@ -574,7 +577,7 @@ async function handleApi(request, env) {
       ok: true,
       service: "FTRIVA Worker",
       environment: env.ENVIRONMENT || "test",
-      supabaseConfigured: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY),
+      supabaseConfigured: Boolean(env.SUPABASE_URL && (env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY)),
       paystackConfigured: Boolean(env.PAYSTACK_SECRET_KEY),
       timestamp: new Date().toISOString()
     });

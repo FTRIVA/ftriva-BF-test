@@ -219,56 +219,21 @@ async function submitFounding10Assessment(claimToken, assessment, env) {
   if (!token) throw new Error("Your Founding 10 claim token is missing.");
   const tokenHash = await sha256(token);
 
-  const rows = await supabaseRequest(
-    `/rest/v1/ftriva_founding10_claims?claim_token_hash=eq.${encodeURIComponent(tokenHash)}&status=eq.claimed&select=id,package_id,email`,
-    env,
-    { method: "GET" }
-  );
-  if (!Array.isArray(rows) || rows.length !== 1) {
-    const error = new Error("This Founding 10 claim is invalid, expired or has already been submitted.");
-    error.status = 403;
-    throw error;
-  }
+  // The database function consumes the claim and inserts the assessment in
+  // one transaction, so a failed insert never strands a valid claim.
+  const result = await supabaseRequest("/rest/v1/rpc/submit_ftriva_founding10_assessment", env, {
+    method: "POST",
+    body: JSON.stringify({
+      p_claim_token_hash: tokenHash,
+      p_assessment: assessment
+    })
+  });
 
-  const claim = rows[0];
-  // Atomically consume the claim. Only one simultaneous submission can change
-  // its status from `claimed` to `assessment_submitted`.
-  const updated = await supabaseRequest(
-    `/rest/v1/ftriva_founding10_claims?id=eq.${encodeURIComponent(claim.id)}&status=eq.claimed`,
-    env,
-    {
-      method: "PATCH",
-      headers: { prefer: "return=representation" },
-      body: JSON.stringify({
-        assessment_data: assessment,
-        status: "assessment_submitted",
-        submitted_at: new Date().toISOString()
-      })
-    }
-  );
-  if (!Array.isArray(updated) || updated.length !== 1) {
-    const error = new Error("This Founding 10 claim has already been submitted.");
+  if (!result?.submitted) {
+    const error = new Error("This Founding 10 claim is invalid, expired or has already been submitted.");
     error.status = 409;
     throw error;
   }
-
-  // Also place the assessment in the central assessments table for the same
-  // admin workflow as paid personalised programmes. DIGITAL does not require
-  // an assessment, but a Founding 10 DIGITAL customer may submit one.
-  const email = safeText(assessment?.personal?.email || claim.email, 254).toLowerCase();
-  await supabaseRequest("/rest/v1/ftriva_assessments", env, {
-    method: "POST",
-    headers: { prefer: "return=minimal" },
-    body: JSON.stringify({
-      founding10_claim_id: claim.id,
-      package_type: claim.package_id,
-      customer_email: email,
-      assessment_data: assessment,
-      requested_start_date: safeText(assessment.startDate, 40) || null,
-      status: "assessment_submitted",
-      submitted_at: new Date().toISOString()
-    })
-  });
 }
 
 async function handlePaymentInitialize(request, env) {
@@ -538,7 +503,7 @@ async function handlePaystackWebhook(request, env) {
         if (packageInfo) {
           verifyAmountAndCurrency(payment, packageId, packageInfo);
           await savePurchase(payment, packageId, env);
-          if (isNewEvent) await sendSignupNotification(env, "paid programme or membership");
+          if (isNewEvent && packageInfo.type !== "monthly") await sendSignupNotification(env, "paid programme");
         }
       }
     } else if (eventType === "subscription.create") {

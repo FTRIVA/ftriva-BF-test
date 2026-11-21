@@ -46,7 +46,7 @@ if(callbackMessage){const params=new URLSearchParams(location.search),reference=
  catch(err){callbackMessage.innerHTML=`<div class="error"><strong>Payment not verified.</strong><p>${escapeHtml(err.message)}</p><p>If money was deducted, do not pay again until the transaction has been checked.</p><a href="mailto:ftrivafitness@gmail.com">Contact FTRIVA</a></div>`;}})();}}
 
 const assessmentForm=$('#assessment-form');
-if(assessmentForm){
+if(assessmentForm){const desiredStartDate=$('[name="desiredStartDate"]',assessmentForm);if(desiredStartDate){const now=new Date();const localDate=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);desiredStartDate.min=localDate;}
  const params=new URLSearchParams(location.search),claimToken=params.get('claim')||sessionStorage.getItem('ftriva_founding10_claim')||'';
  let reference=params.get('reference')||params.get('trxref')||sessionStorage.getItem('ftriva_verified_reference')||'';
  let verifiedPackage=params.get('package')||sessionStorage.getItem('ftriva_verified_package')||'Selected FTRIVA package';

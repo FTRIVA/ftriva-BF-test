@@ -7,7 +7,6 @@
     {
       "name": "EMAIL",
       "remote": true,
-      "destination_address": "ftrivafitness@gmail.com",
       "allowed_sender_addresses": [
         "notifications@ftriva.com"
       ]

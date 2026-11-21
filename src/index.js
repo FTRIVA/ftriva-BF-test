@@ -143,13 +143,8 @@ function verifyAmountAndCurrency(payment, packageId, packageInfo) {
   if (!packageInfo) throw new Error("This transaction is not associated with a recognised FTRIVA package.");
   if (payment.currency !== "ZAR") throw new Error("The verified transaction currency does not match ZAR.");
   const actualAmount = Number(payment.amount);
-  if (!Number.isFinite(actualAmount) || actualAmount < packageInfo.amount) {
-    throw new Error("The verified transaction amount does not match the selected FTRIVA package.");
-  }
-  // For once-off products, require the exact Black Friday amount. Monthly
-  // Paystack plan payments are checked against their configured plan amount.
-  if (packageInfo.type !== "monthly" && actualAmount !== packageInfo.amount) {
-    throw new Error("The verified transaction amount is not the current price for this FTRIVA package.");
+  if (!Number.isFinite(actualAmount) || actualAmount !== packageInfo.amount) {
+    throw new Error("The verified transaction amount does not match the current price for this FTRIVA package.");
   }
 }
 
@@ -413,8 +408,10 @@ async function handleAssessmentSubmit(request, env) {
   const reference = safeText(body.paymentReference, 120);
   if (!reference) return json({ error: "A verified payment reference or Founding 10 claim is required." }, 403);
 
+  let paymentVerified = false;
   try {
     const payment = await verifyPaystack(reference, env);
+    paymentVerified = true;
     const { packageId, packageInfo } = getPackageFromPayment(payment);
     if (!packageInfo || !packageInfo.assessmentRequired) {
       return json({ error: "This purchase does not require a personalised fitness assessment." }, 403);
@@ -428,10 +425,12 @@ async function handleAssessmentSubmit(request, env) {
     return json({ submitted: true, message: "Your assessment has been submitted successfully." });
   } catch (error) {
     return json({
-      error: "Your payment may already be verified, but the assessment could not be saved. Do not pay again.",
+      error: paymentVerified
+        ? "Your payment is verified, but the assessment could not be saved. Do not pay again; contact FTRIVA."
+        : "We could not verify this payment, so the assessment was not submitted.",
       detail: error.message,
-      paymentVerified: true
-    }, error.status || 503);
+      paymentVerified
+    }, error.status || (paymentVerified ? 503 : 400));
   }
 }
 

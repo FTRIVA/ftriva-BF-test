@@ -534,9 +534,12 @@ async function handlePaystackWebhook(request, env) {
       if (reference) {
         const payment = await verifyPaystack(reference, env);
         const { packageId, packageInfo } = getPackageFromPayment(payment);
-        verifyAmountAndCurrency(payment, packageId, packageInfo);
-        await savePurchase(payment, packageId, env);
-        if (isNewEvent) await sendSignupNotification(env, "paid programme or membership");
+        // Ignore successful transactions that do not belong to a FTRIVA package.
+        if (packageInfo) {
+          verifyAmountAndCurrency(payment, packageId, packageInfo);
+          await savePurchase(payment, packageId, env);
+          if (isNewEvent) await sendSignupNotification(env, "paid programme or membership");
+        }
       }
     } else if (eventType === "subscription.create") {
       const planCode = safeText(data.plan?.plan_code || data.plan_code, 160);

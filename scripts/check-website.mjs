@@ -76,6 +76,8 @@ for (const route of [
 ]) assert.ok(worker.includes(route), 'Missing Worker API route: ' + route);
 assert.ok(app.includes('ftriva_founding10_claim'), 'Founding 10 claim handoff missing');
 assert.ok(app.includes('ftriva_verified_reference'), 'Payment verification handoff missing');
+assert.ok(worker.includes('membershipRecorded: false'), 'Membership-pending state missing from payment verification');
+assert.ok(app.includes('result.membershipRecorded===false'), 'Membership-pending state missing from customer callback');
 assert.ok(!/(?:sk_(?:live|test)_|sb_secret_)/i.test(publicFiles), 'Server-side secret appears in public website assets');
 
 console.log('FTRIVA website checks passed: ' + pages.length + ' pages, 7 package prices, 3 membership plan codes, local links/assets, mobile metadata, brand palette and required API routes.');

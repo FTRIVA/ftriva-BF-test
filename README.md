@@ -8,11 +8,13 @@ This repository contains the FTRIVA public website, its Cloudflare Worker API, a
 - The separate member/admin portal is deployed to `https://app-test.ftriva.com`. Its editable HTML source is in `member-app/index.html`, with the deployed Worker wrapper in `member-app/worker.js`. It uses role-based access: members see their training portal; the FTRIVA admin sees the programme builder, assessment review, client assignments, exercise feedback and commerce tools.
 
 ## Test configuration
+- Public website test URL: `https://ftriva-test.hjy6jdj4zk.workers.dev`
 - Worker: `ftriva-test`
 - Environment: `test`
 - Website Supabase project: `jygjaxsztnmgykzhukdx`
 - Member-app Supabase project: `pudyyizfklajwhvsnduz`
 - Member app: `https://app-test.ftriva.com`
+- Paystack test webhook: `https://ftriva-test.hjy6jdj4zk.workers.dev/api/paystack/webhook`
 - Do not modify or deploy the production Worker while completing test-environment work.
 
 ## Required Cloudflare Worker secrets

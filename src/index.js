@@ -402,7 +402,13 @@ async function savePurchase(payment, packageId, env) {
       body: JSON.stringify(record)
     }
   );
-  const memberSync = await syncMemberApp(env, { kind: "purchase", reference: safeText(payment.reference, 160), email: customerEmail, packageCode: packageId, amountMinor: Number(payment.amount), currency: payment.currency || "ZAR", paidAt: payment.paid_at || payment.paidAt || null, channel: safeText(payment.channel, 40) });
+  let memberSync = { synced: false };
+  try {
+    memberSync = await syncMemberApp(env, { kind: "purchase", reference: safeText(payment.reference, 160), email: customerEmail, packageCode: packageId, amountMinor: Number(payment.amount), currency: payment.currency || "ZAR", paidAt: payment.paid_at || payment.paidAt || null, channel: safeText(payment.channel, 40) }) || { synced: false };
+  } catch (error) {
+    console.error("FTRIVA purchase saved but member-app sync is pending:", error?.message || "Unknown sync error");
+    memberSync = { synced: false, error: String(error?.message || "Member app sync failed").slice(0, 300) };
+  }
   return memberSync;
 }
 __name(savePurchase, "savePurchase");

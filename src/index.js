@@ -185,23 +185,24 @@ async function sendFtrivaEmailOnce(env,key,template,recipient,subject,textBody,h
   try{const rows=await supabaseRequest("/rest/v1/ftriva_customer_email_outbox?idempotency_key=eq."+encodeURIComponent(key)+"&select=id&limit=1",env);if(Array.isArray(rows)&&rows[0])await supabaseRequest("/rest/v1/ftriva_customer_email_outbox?id=eq."+encodeURIComponent(rows[0].id),env,{method:"PATCH",headers:{prefer:"return=minimal"},body:JSON.stringify({delivery_status:"failed",last_error:String(error?.message||"Email delivery failed").slice(0,500),updated_at:new Date().toISOString()})})}catch(e){console.error("FTRIVA outbox update failed:",e?.message||"Unknown error")}
  }
 }
-async function sendFtrivaPurchaseEmails(env,payment,packageId,packageInfo,subscriptionCode=null){
+async function sendFtrivaPurchaseEmails(env,payment,packageId,packageInfo,subscriptionCode=null,digitalDeliveryReady=false){
  const email=safeText(payment.customer?.email,254).toLowerCase();if(!validEmail(email))return;
  const membership=packageInfo.type==="monthly";const needsAssessment=!membership&&packageInfo.assessmentRequired===true;const isDigital=packageId==="DIGITAL";
  const ref=safeText(membership?(subscriptionCode||payment.subscription_code||payment.subscription?.subscription_code||payment.reference):payment.reference,160);const key=ref||await sha256(email+":"+packageId);
  const name=safeText(payment.metadata?.customer_name||payment.metadata?.full_name,120)||"there";const amount=(Number(payment.amount||packageInfo.amount)/100).toFixed(2);const appUrl="https://app-test.ftriva.com";
- const subject=membership?"Your FTRIVA membership is active":needsAssessment?"Your FTRIVA purchase is confirmed":"Your FTRIVA DIGITAL resources are ready";
- const intro=membership?"Your FTRIVA "+packageId+" membership is active.":needsAssessment?"Your FTRIVA "+packageId+" purchase is confirmed.":"Your FTRIVA DIGITAL resources are ready.";
- const nextStep=needsAssessment?"Your personalised programme will appear in the app after you complete your assessment and FTRIVA has reviewed and prepared your plan. If you have not submitted your assessment yet, return to the FTRIVA website and complete it.":isDigital?"Your DIGITAL Training Toolkit and Workout Tracker are available in the Downloads section after you sign in.":"Your membership access is active in the app.";
+ const subject=membership?"Your FTRIVA membership is active":needsAssessment?"Your FTRIVA purchase is confirmed":isDigital?(digitalDeliveryReady?"Your FTRIVA DIGITAL resources are ready":"Your FTRIVA DIGITAL purchase is confirmed — access is syncing"):"Your FTRIVA purchase is confirmed";
+ const intro=membership?"Your FTRIVA "+packageId+" membership is active.":needsAssessment?"Your FTRIVA "+packageId+" purchase is confirmed.":isDigital?(digitalDeliveryReady?"Your FTRIVA DIGITAL resources are ready.":"Your DIGITAL payment is verified and your purchase is recorded. We are still synchronising secure app access."):"Your FTRIVA purchase is confirmed.";
+ const nextStep=needsAssessment?"Your personalised programme will appear in the app after you complete your assessment and FTRIVA has reviewed and prepared your plan. If you have not submitted your assessment yet, return to the FTRIVA website and complete it.":isDigital?(digitalDeliveryReady?"Your DIGITAL Training Toolkit and Workout Tracker are available in the Downloads section after you sign in.":"Your purchase is recorded, but app access is still being synchronised. Do not pay again. Sign in using the same email address later; if the resources are not visible, contact FTRIVA on WhatsApp +27 74 616 0421."):"Your membership access is active in the app.";
  const textBody=["Hi "+name+",","",intro,"Amount: R"+amount,"",nextStep,"","Log in at "+appUrl+" using the same email address used at checkout. If you are new, create an account and confirm your email first.","","Add to Home Screen:","iPhone/iPad: Open this link in Safari, tap Share, then Add to Home Screen.","Android: Open in Chrome, tap the three-dot menu, then Add to Home screen or Install app.","","Need help? WhatsApp FTRIVA: +27 74 616 0421","","FIT. TRAIN. THRIVE.","FTRIVA"].join(String.fromCharCode(10));
- const heading=membership?"Your membership is active":needsAssessment?"Your purchase is confirmed":"Your DIGITAL resources are ready";
+ const heading=membership?"Your membership is active":needsAssessment?"Your purchase is confirmed":isDigital?(digitalDeliveryReady?"Your DIGITAL resources are ready":"Your DIGITAL purchase is confirmed"):"Your purchase is confirmed";
  const htmlBody="<div style='background:#F5F1E8;padding:28px;font-family:Arial,sans-serif;color:#101D2B'><div style='max-width:560px;margin:auto;background:#fff;border-radius:16px;padding:28px'><div style='font-weight:900;letter-spacing:4px;font-size:22px'>FTRIVA</div><div style='color:#A8B8A0;font-size:11px;letter-spacing:2px;margin-top:4px'>FIT. TRAIN. THRIVE.</div><h1 style='font-size:25px;margin-top:28px'>"+heading+"</h1><p>Hi "+emailEscape(name)+",</p><p>"+emailEscape(intro)+"</p><p style='background:#F5F1E8;padding:14px;border-radius:8px'>Amount: <b>R"+amount+"</b></p><p>"+emailEscape(nextStep)+"</p><p><a href='"+appUrl+"' style='display:inline-block;background:#101D2B;color:white;padding:13px 18px;border-radius:8px;text-decoration:none;font-weight:bold'>Open your FTRIVA app</a></p><h3>Sign in</h3><p>Use the same email address used at checkout. If you are new, create an account and confirm your email first.</p><h3>Add to your Home Screen</h3><p><b>iPhone/iPad:</b> Open in Safari, tap Share, then Add to Home Screen.</p><p><b>Android:</b> Open in Chrome, tap the three-dot menu, then Add to Home screen or Install app.</p><p>Need help? WhatsApp <b>+27 74 616 0421</b>.</p><p style='color:#A8B8A0;font-weight:bold'>FIT. TRAIN. THRIVE.</p></div></div>";
  const payload={package:packageId,amount:Number(payment.amount||packageInfo.amount),currency:payment.currency||"ZAR",reference:ref,environment:"test"};
- await sendFtrivaEmailOnce(env,"ftriva:"+key+":customer",membership?"membership_activation_customer":"programme_purchase_customer",email,subject,textBody,htmlBody,payload);
- const internalSubject="FTRIVA "+(membership?"membership activated":"programme purchase confirmed")+" — "+packageId;
- const internalText=["A verified FTRIVA "+(membership?"membership activation":"programme purchase")+" has completed.","Package: "+packageId,"Amount: R"+amount,"Reference: "+ref,"Environment: TEST","The app entitlement sync completed before this notification was queued."].join(String.fromCharCode(10));
- const internalHtml="<div style='font-family:Arial,sans-serif;color:#101D2B'><h2>FTRIVA "+(membership?"membership activated":"purchase confirmed")+"</h2><p>Package: <b>"+emailEscape(packageId)+"</b></p><p>Amount: <b>R"+amount+"</b></p><p>Reference: "+emailEscape(ref)+"</p><p>Environment: TEST</p></div>";
- await sendFtrivaEmailOnce(env,"ftriva:"+key+":internal",membership?"membership_activation_internal":"programme_purchase_internal","ftrivafitness@gmail.com",internalSubject,internalText,internalHtml,payload);
+ await sendFtrivaEmailOnce(env,"ftriva:"+key+":customer"+(isDigital?(digitalDeliveryReady?":digital-ready":":digital-pending"):""),membership?"membership_activation_customer":isDigital?"digital_purchase_customer":"programme_purchase_customer",email,subject,textBody,htmlBody,{...payload,digitalDeliveryReady});
+ const deliveryNote=isDigital?(digitalDeliveryReady?"DIGITAL app entitlement sync completed. Resources are available after the member signs in.":"WARNING: verified DIGITAL purchase is recorded, but member-app entitlement sync is not confirmed. Do not ask the customer to pay again; retry fulfilment."):"The app entitlement sync completed before this notification was queued.";
+ const internalSubject="FTRIVA "+(membership?"membership activated":isDigital?(digitalDeliveryReady?"DIGITAL fulfilment ready":"DIGITAL fulfilment pending"):"programme purchase confirmed")+" — "+packageId;
+ const internalText=["A verified FTRIVA "+(membership?"membership activation":"purchase")+" has completed.","Package: "+packageId,"Amount: R"+amount,"Reference: "+ref,"Environment: TEST",deliveryNote].join(String.fromCharCode(10));
+ const internalHtml="<div style='font-family:Arial,sans-serif;color:#101D2B'><h2>FTRIVA "+(membership?"membership activated":isDigital?(digitalDeliveryReady?"DIGITAL fulfilment ready":"DIGITAL fulfilment pending"):"purchase confirmed")+"</h2><p>Package: <b>"+emailEscape(packageId)+"</b></p><p>Amount: <b>R"+amount+"</b></p><p>Reference: "+emailEscape(ref)+"</p><p>Environment: TEST</p><p>"+emailEscape(deliveryNote)+"</p></div>";
+ await sendFtrivaEmailOnce(env,"ftriva:"+key+":internal"+(isDigital?(digitalDeliveryReady?":digital-ready":":digital-pending"):""),membership?"membership_activation_internal":isDigital?"digital_purchase_internal":"programme_purchase_internal","ftrivafitness@gmail.com",internalSubject,internalText,internalHtml,{...payload,digitalDeliveryReady});
 }async function sendFtrivaMembershipEmails(env,email,packageId,subscriptionCode,data){const amount=Number(data.amount||data.plan?.amount||PACKAGES[packageId].amount);const payment={reference:subscriptionCode,subscription_code:subscriptionCode,amount,currency:"ZAR",customer:{email},metadata:{}};await sendFtrivaPurchaseEmails(env,payment,packageId,PACKAGES[packageId],subscriptionCode)}
 
 async function paystackRequest(path, secret, body) {
@@ -401,7 +402,8 @@ async function savePurchase(payment, packageId, env) {
       body: JSON.stringify(record)
     }
   );
-  await syncMemberApp(env, { kind: "purchase", reference: safeText(payment.reference, 160), email: customerEmail, packageCode: packageId, amountMinor: Number(payment.amount), currency: payment.currency || "ZAR", paidAt: payment.paid_at || payment.paidAt || null, channel: safeText(payment.channel, 40) });
+  const memberSync = await syncMemberApp(env, { kind: "purchase", reference: safeText(payment.reference, 160), email: customerEmail, packageCode: packageId, amountMinor: Number(payment.amount), currency: payment.currency || "ZAR", paidAt: payment.paid_at || payment.paidAt || null, channel: safeText(payment.channel, 40) });
+  return memberSync;
 }
 __name(savePurchase, "savePurchase");
 async function savePaidAssessment(payment, packageId, assessment, env, assessmentValidation) {
@@ -636,8 +638,9 @@ async function handlePaymentVerify(request, env) {
     const payment = await verifyPaystack(reference, env);
     const { packageId, packageInfo } = getPackageFromPayment(payment);
     verifyAmountAndCurrency(payment, packageId, packageInfo);
+    let memberSync = { synced: false };
     try {
-      await savePurchase(payment, packageId, env);
+      memberSync = await savePurchase(payment, packageId, env) || { synced: false };
     } catch (error) {
       return json({
         verified: true,
@@ -664,8 +667,8 @@ async function handlePaymentVerify(request, env) {
         }, 202);
       }
     }
-    const digitalDeliveryReady = packageId === "DIGITAL";
-    await sendFtrivaPurchaseEmails(env, payment, packageId, packageInfo, verifiedMembershipCode);
+    const digitalDeliveryReady = packageId === "DIGITAL" && memberSync?.synced === true;
+    await sendFtrivaPurchaseEmails(env, payment, packageId, packageInfo, verifiedMembershipCode, digitalDeliveryReady);
     return json({
       verified: true,
       recorded: true,

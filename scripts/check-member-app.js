@@ -5,9 +5,9 @@ const worker = readFileSync("member-app/worker.js", "utf8");
 const website = readFileSync("public/app.js", "utf8");
 const workerSource = readFileSync("src/index.js", "utf8");
 
-const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)]
+const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
-  .filter((source) => source.trim().length > 0);
+  .filter((script) => script.trim().length > 0);
 
 if (scripts.length === 0) {
   throw new Error("No inline JavaScript was found in member-app/index.html.");
@@ -27,7 +27,7 @@ const requiredPages = [
   "adminProgrammes", "adminClients", "adminMessages", "adminAssessments",
   "adminFeedback", "adminLibrary", "adminPayments"
 ];
-const pageIds = new Set([...html.matchAll(/\\bid="([^"]+Page)"/g)].map((match) => match[1]));
+const pageIds = new Set([...html.matchAll(/\bid="([^"]+Page)"/g)].map((match) => match[1]));
 for (const page of requiredPages) {
   if (!pageIds.has(page + "Page")) {
     throw new Error("Missing required member/admin page: " + page + "Page");

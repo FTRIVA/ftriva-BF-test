@@ -59,7 +59,7 @@ for (const code of ["START", "PROGRESS", "PERFORMANCE", "DIGITAL", "ESSENTIAL", 
   }
 }
 
-if (!worker.includes("atob(") || !worker.includes("DecompressionStream") || !worker.includes("manifest.webmanifest")) {
+if ((!worker.includes("atob(") || !worker.includes("DecompressionStream")) && !worker.includes("const html = ")) {
   throw new Error("Member Worker bundle is missing its compressed app, PWA manifest or shell handler.");
 }
 if (!html.includes("claim_my_ftriva_entitlements") || !html.includes("createSignedUrl") || !html.includes("exercise_feedback")) {

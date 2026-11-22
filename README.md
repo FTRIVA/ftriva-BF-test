@@ -5,7 +5,7 @@ This repository contains the FTRIVA public website, its Cloudflare Worker API, a
 ## Interfaces
 - `public/` — public website pages, package selection, assessment forms, checkout and payment callback.
 - `src/index.js` — Cloudflare Worker API for Paystack, Supabase, purchase entitlements, assessment submissions, digital downloads and Resend notifications.
-- The separate member/admin portal is deployed to `https://app-test.ftriva.com`. It uses role-based access: members see their training portal; the FTRIVA admin sees the programme builder and client-management tools.
+- The separate member/admin portal is deployed to `https://app-test.ftriva.com`. Its editable HTML source is in `member-app/index.html`, with the deployed Worker wrapper in `member-app/worker.js`. It uses role-based access: members see their training portal; the FTRIVA admin sees the programme builder and client-management tools.
 
 ## Test configuration
 - Worker: `ftriva-test`

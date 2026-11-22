@@ -5,7 +5,7 @@ This repository contains the FTRIVA public website, its Cloudflare Worker API, a
 ## Interfaces
 - `public/` — public website pages, package selection, assessment forms, checkout and payment callback.
 - `src/index.js` — Cloudflare Worker API for Paystack, Supabase, purchase entitlements, assessment submissions, digital downloads and Resend notifications.
-- The separate member/admin portal is deployed to `https://app-test.ftriva.com`. Its editable HTML source is in `member-app/index.html`, with the deployed Worker wrapper in `member-app/worker.js`. It uses role-based access: members see their training portal; the FTRIVA admin sees the programme builder and client-management tools.
+- The separate member/admin portal is deployed to `https://app-test.ftriva.com`. Its editable HTML source is in `member-app/index.html`, with the deployed Worker wrapper in `member-app/worker.js`. It uses role-based access: members see their training portal; the FTRIVA admin sees the programme builder, assessment review, client assignments, exercise feedback and commerce tools.
 
 ## Test configuration
 - Worker: `ftriva-test`
@@ -34,7 +34,7 @@ The Paystack plan codes and non-secret environment variables are in `wrangler.js
 
 ## Security and data
 - Keep website customer/payment/assessment tables private with RLS enabled and no public policies. The website Worker accesses them server-side.
-- Keep member profiles, programmes, assignments, feedback, progress and storage protected by member/admin RLS policies.
+- Keep member profiles, programmes, assignments, feedback, progress, client assessment records and storage protected by member/admin RLS policies. Paid website assessments are synchronised server-to-server into the admin-only `client_assessments` table through the authenticated `ftriva-purchase-sync` Edge Function.
 - The website Supabase project is hosted in EU Central (Frankfurt). Review POPIA Section 72 cross-border transfer safeguards and the privacy notice before accepting real client data.
 - Keep test and production Supabase projects, Worker secrets, Paystack keys and domains separate.
 

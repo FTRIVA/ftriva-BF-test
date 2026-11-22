@@ -5,12 +5,13 @@ Scope: WEBSITE ONLY. The customer web app is intentionally parked.
 COMPLETED
 [x] Website source is maintained on the digital-delivery-test branch.
 [x] Cloudflare build trigger now watches digital-delivery-test (not main).
-[x] Latest Cloudflare build completed successfully on 22 November 2026 and deployed to ftriva-test (version 25c37f27-3d19-47ec-bf3e-6474ea94defb).
+[x] Latest Cloudflare build completed successfully on 22 November 2026 and deployed to ftriva-test (version 5b29194a-d5b3-4e09-b864-3c618a64d6d3).
 [x] Test Worker has ASSETS, EMAIL, Supabase and Paystack bindings; ENVIRONMENT=test.
 [x] Correct ESSENTIAL Paystack test plan code is PLN_xn18tbtoq11ftll.
 [x] GitHub CI passed: Worker/browser JavaScript syntax plus 10-page website smoke checks.
 [x] Automated checks cover all 10 pages, seven package prices, three membership plan codes, local links/assets, mobile metadata, brand palette, required API routes and public-secret exposure.
 [x] Membership feature differences are now shown on both the Memberships page and package comparison page.
+[x] Black Friday campaign dates (23–30 November 2026) are visible on the homepage and programmes page.
 [x] Privacy notice wording now reflects the current website-only state and does not claim that the future customer portal or automated Gmail delivery is already available.
 [x] User previously confirmed 8/8 manual website checks. Those checks pre-date the latest deployment, so repeat the final browser check once after this build.
 [x] Supabase purchase, membership, assessment and Paystack-event tables are present. One ESSENTIAL test membership is active and linked to a purchase.

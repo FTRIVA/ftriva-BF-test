@@ -514,6 +514,131 @@ async function handlePaymentInitialize(request, env) {
   }
 }
 
+
+
+// DIGITAL downloads are time-limited bearer links issued only after Paystack
+// verifies a DIGITAL payment. Each download re-checks the purchase record and
+// streams from a private Supabase Storage bucket (never a public object URL).
+function base64UrlEncode(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
+  return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+
+async function digitalTokenKey(env) {
+  const { key } = getSupabaseConfig(env);
+  const material = new TextEncoder().encode(`FTRIVA:DIGITAL:DOWNLOAD:v1:${key}`);
+  const digest = await crypto.subtle.digest("SHA-256", material);
+  return crypto.subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+async function createDigitalDownloadLinks(reference, requestUrl, env) {
+  const payload = {
+    r: safeText(reference, 120),
+    exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60),
+    v: 1
+  };
+  const encodedPayload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
+  const signature = await crypto.subtle.sign("HMAC", await digitalTokenKey(env), new TextEncoder().encode(encodedPayload));
+  const token = `${encodedPayload}.${base64UrlEncode(new Uint8Array(signature))}`;
+  const origin = new URL(requestUrl).origin;
+  const makeUrl = file => {
+    const url = new URL("/api/digital/download", origin);
+    url.searchParams.set("file", file);
+    url.searchParams.set("token", token);
+    return url.toString();
+  };
+  return {
+    toolkit: makeUrl("toolkit"),
+    tracker: makeUrl("tracker"),
+    expiresAt: new Date(payload.exp * 1000).toISOString()
+  };
+}
+
+async function verifyDigitalDownloadToken(token, env) {
+  if (!token || token.length > 4000) return null;
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  try {
+    const payloadBytes = base64UrlDecode(parts[0]);
+    const signature = base64UrlDecode(parts[1]);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      await digitalTokenKey(env),
+      signature,
+      new TextEncoder().encode(parts[0])
+    );
+    if (!valid) return null;
+    const payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+    if (payload?.v !== 1 || !Number.isInteger(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (!safeText(payload.r, 120)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function handleDigitalDownload(request, env) {
+  const url = new URL(request.url);
+  const file = url.searchParams.get("file");
+  const token = safeText(url.searchParams.get("token"), 4000);
+  const files = {
+    toolkit: {
+      name: "FTRIVA_DIGITAL_Training_Toolkit.pdf",
+      type: "application/pdf"
+    },
+    tracker: {
+      name: "FTRIVA_DIGITAL_Workout_Tracker.xlsx",
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+  };
+  if (!files[file]) return json({ error: "This digital download is not available." }, 404);
+
+  const claims = await verifyDigitalDownloadToken(token, env);
+  if (!claims) return json({ error: "This download link is invalid or has expired. Return to your payment confirmation or contact FTRIVA." }, 401);
+
+  try {
+    const reference = encodeURIComponent(claims.r);
+    const purchases = await supabaseRequest(
+      `/rest/v1/ftriva_purchases?select=payment_reference&payment_reference=eq.${reference}&package_id=eq.DIGITAL&payment_status=eq.success&amount=eq.4900&currency=eq.ZAR&limit=1`,
+      env
+    );
+    if (!Array.isArray(purchases) || purchases.length !== 1) {
+      return json({ error: "We could not confirm an active DIGITAL purchase for this link. Please contact FTRIVA." }, 403);
+    }
+
+    const { url: supabaseUrl, key } = getSupabaseConfig(env);
+    const headers = new Headers({ apikey: key });
+    if (!key.startsWith("sb_secret_")) headers.set("authorization", `Bearer ${key}`);
+    const objectUrl = `${supabaseUrl}/storage/v1/object/authenticated/ftriva-digital-test/${encodeURIComponent(files[file].name)}`;
+    const storedFile = await fetch(objectUrl, { headers });
+    if (!storedFile.ok) {
+      console.error("FTRIVA digital asset unavailable:", storedFile.status);
+      return json({ error: "Your payment is verified, but this file is temporarily unavailable. Please contact FTRIVA; do not pay again." }, 503);
+    }
+
+    return new Response(storedFile.body, {
+      status: 200,
+      headers: {
+        "content-type": files[file].type,
+        "content-disposition": `attachment; filename="${files[file].name}"`,
+        "cache-control": "private, no-store, max-age=0",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; sandbox"
+      }
+    });
+  } catch (error) {
+    console.error("FTRIVA digital download failed:", error?.message || "Unknown error");
+    return json({ error: "Your download could not be prepared. Please contact FTRIVA; do not pay again." }, 503);
+  }
+}
+
 async function handlePaymentVerify(request, env) {
   let body;
   try { body = await request.json(); } catch { return json({ error: "Invalid payment verification request." }, 400); }
@@ -541,9 +666,6 @@ async function handlePaymentVerify(request, env) {
       try {
         await syncMembershipFromVerifiedPayment(payment, packageId, env);
       } catch (error) {
-        // The purchase is already safely recorded. Keep the verified payment
-        // distinct from subscription activation so the customer is never told
-        // that a saved purchase failed or encouraged to pay a second time.
         return json({
           verified: true,
           recorded: true,
@@ -557,10 +679,30 @@ async function handlePaymentVerify(request, env) {
       }
     }
 
+    let digitalDownloads;
+    if (packageId === "DIGITAL") {
+      try {
+        digitalDownloads = await createDigitalDownloadLinks(payment.reference, request.url, env);
+      } catch (error) {
+        console.error("FTRIVA digital link creation failed:", error?.message || "Unknown error");
+        return json({
+          verified: true,
+          recorded: true,
+          digitalDeliveryReady: false,
+          reference: payment.reference,
+          amount: payment.amount,
+          currency: payment.currency,
+          package: packageId,
+          error: "Your payment is verified and recorded, but download links could not be prepared. Do not pay again; contact FTRIVA."
+        }, 202);
+      }
+    }
+
     return json({
       verified: true,
       recorded: true,
       ...(packageInfo.type === "monthly" ? { membershipRecorded: true } : {}),
+      ...(packageId === "DIGITAL" ? { digitalDeliveryReady: true, digitalDownloads } : {}),
       reference: payment.reference,
       amount: payment.amount,
       currency: payment.currency,
@@ -835,6 +977,7 @@ async function handleApi(request, env) {
     });
   }
 
+  if (request.method === "GET" && url.pathname === "/api/digital/download") return handleDigitalDownload(request, env);
   if (request.method === "POST" && url.pathname === "/api/payment/initialize") return handlePaymentInitialize(request, env);
   if (request.method === "POST" && url.pathname === "/api/payment/verify") return handlePaymentVerify(request, env);
   if (request.method === "POST" && url.pathname === "/api/payment/recover") return handlePaymentRecover(request, env);

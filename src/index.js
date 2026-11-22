@@ -493,7 +493,8 @@ async function handlePaymentInitialize(request, env) {
       ftriva_package: packageId,
       customer_name: fullName,
       phone,
-      environment: env.ENVIRONMENT || "test"
+      environment: env.ENVIRONMENT || "test",
+      cancel_action: `${new URL(request.url).origin}/start-assessment.html?package=${encodeURIComponent(packageId)}&cancelled=1`
     }
   };
   if (packageInfo.type === "monthly") {

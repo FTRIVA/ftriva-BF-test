@@ -21,12 +21,14 @@ COMPLETED
 WEBSITE DELIVERY MODEL
 - The website is the sales and information site. The customer web app is intentionally parked.
 - My FTRIVA Account remains a clearly labelled preparation page. Do not set FTRIVA_APP_URL yet.
-- Digital files are reserved for the future app; do not upload them to website storage during this phase.
-- Until the app exists, FTRIVA must decide and document the interim manual fulfilment process for paid programmes and memberships.
+- DIGITAL is temporarily delivered from the existing private Supabase Storage bucket `ftriva-digital-test`. The website Worker now issues 30-day signed download links only after a verified R4900 ZAR DIGITAL purchase and re-checks the successful purchase before streaming either file.
+- The private bucket currently contains zero objects. Upload the approved PDF and XLSX using their exact filenames before advertising DIGITAL as ready for instant delivery.
+- The same purchase record and download endpoint can be surfaced inside the future web app; no public file URLs are used.
 - Internal generic signup notifications use the Cloudflare EMAIL binding. Automated customer emails through Gmail are not configured; do not promise them.
 
 REMAINING WEBSITE LAUNCH BLOCKERS
-[ ] Confirm a workable interim manual fulfilment process for START, PROGRESS, PERFORMANCE and monthly memberships until account/app delivery exists. DIGITAL file delivery is deferred until the future app or a separately approved manual process.
+[ ] Upload `FTRIVA_DIGITAL_Training_Toolkit.pdf` and `FTRIVA_DIGITAL_Workout_Tracker.xlsx` to the private `ftriva-digital-test` Supabase Storage bucket, then test both downloads after a verified DIGITAL test payment. Do not use a real payment for this test.
+[ ] Confirm a workable interim manual fulfilment process for START, PROGRESS, PERFORMANCE and monthly memberships until account/app delivery exists.
 [ ] Keep Gmail OAuth and automated customer email delivery deferred unless automated confirmations are required for the website-only launch. Customer email outbox contains pending test messages; do not release old test messages to customers.
 [ ] Add and approve website Terms & Conditions covering programme delivery, recurring membership billing/cancellation, refunds, and customer responsibilities.
 [ ] Complete legal review of the privacy notice, health/minor data processing, operator agreements and POPIA cross-border safeguards. The website Supabase database is hosted in EU Central (Frankfurt).

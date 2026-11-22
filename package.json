@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node --check src/index.js && node --check public/app.js && node scripts/check-member-app.js"
+    "check": "node --check src/index.js && node --check public/app.js && node --check member-app/worker.js && node scripts/check-member-app.js && node --input-type=module -e \"import fs from 'node:fs'; JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'))\""
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

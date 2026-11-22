@@ -39,4 +39,4 @@ The Paystack plan codes and non-secret environment variables are in `wrangler.js
 - Keep test and production Supabase projects, Worker secrets, Paystack keys and domains separate.
 
 ## Deployment
-The connected Cloudflare deployment builds from this repository. After changing files, verify the latest `ftriva-test` deployment and confirm that its secret bindings remain configured. Never use a live Paystack secret in the test Worker.
+GitHub stores the source for the test website and member portal. The current Cloudflare test Workers were deployed directly through the Cloudflare API; do not assume a GitHub commit automatically deploys them. After changing code, deploy the matching Worker and verify the test domain, assets and secret bindings. Never deploy the test configuration to the production Worker or use a live Paystack secret in the test Worker.

@@ -16,18 +16,19 @@ COMPLETED
 [x] Database customer-sync triggers are enabled. Security advisor shows no critical function-execution exposure; RLS is enabled on private customer tables.
 
 WEBSITE DELIVERY MODEL
-- The website can sell once-off programmes and memberships without the web app if FTRIVA fulfils programmes electronically by email/secure link and manages support manually.
+- The website is the sales and information site. The customer web app is intentionally parked.
 - My FTRIVA Account remains a clearly labelled preparation page. Do not set FTRIVA_APP_URL yet.
-- Payment confirmation copy now explains electronic/manual fulfilment and does not promise web-app login instructions.
-- Do not advertise automated customer emails until Gmail API delivery is configured and tested.
+- Digital files are reserved for the future app; do not upload them to website storage during this phase.
+- Until the app exists, FTRIVA must decide and document the interim manual fulfilment process for paid programmes and memberships.
+- Internal generic signup notifications use the Cloudflare EMAIL binding. Automated customer emails through Gmail are not configured; do not promise them.
 
 REMAINING WEBSITE LAUNCH BLOCKERS
-[ ] Upload the approved DIGITAL PDF and XLSX into the private ftriva-digital-test bucket. It is currently empty.
-[ ] Complete Gmail API OAuth with gmail.send only, configure encrypted Worker secrets, implement/enable the outbox sender, and test delivery. Customer email outbox currently contains pending messages; do not release old test messages to customers.
-[ ] Confirm a workable manual fulfilment process for START, PROGRESS, PERFORMANCE, DIGITAL and monthly memberships until account/app delivery exists.
-[ ] Review the privacy notice and POPIA cross-border safeguards. The website Supabase database is hosted in EU Central (Frankfurt).
-[ ] Finish final post-deployment browser testing of the test site, checkout screens, assessment, Founding 10, and mobile navigation. Do not make another payment just to repeat the existing ESSENTIAL test.
-[ ] Confirm PLUS and ELITE subscription flows and subscription lifecycle handling. ESSENTIAL has one active test subscription; do not cancel or repay it.
+[ ] Confirm a workable interim manual fulfilment process for START, PROGRESS, PERFORMANCE and monthly memberships until account/app delivery exists. DIGITAL file delivery is deferred until the future app or a separately approved manual process.
+[ ] Keep Gmail OAuth and automated customer email delivery deferred unless automated confirmations are required for the website-only launch. Customer email outbox contains pending test messages; do not release old test messages to customers.
+[ ] Add and approve website Terms & Conditions covering programme delivery, recurring membership billing/cancellation, refunds, and customer responsibilities.
+[ ] Complete legal review of the privacy notice, health/minor data processing, operator agreements and POPIA cross-border safeguards. The website Supabase database is hosted in EU Central (Frankfurt).
+[ ] Finish final post-deployment browser testing of the test site, checkout screens, assessment, Founding 10, and mobile navigation. Repeat only necessary test-mode flows; do not make another payment just to repeat the existing ESSENTIAL test.
+[ ] Confirm PLUS and ELITE test subscription activation, renewal/lifecycle handling and cancellation status. ESSENTIAL has one active test subscription; do not cancel or repay it.
 [ ] Create/configure the production Worker with separate LIVE Paystack credentials and production configuration only after test sign-off.
 [ ] Attach ftriva.com to the new production Worker only after explicit launch approval. It is currently attached to the older calm-mud-1eb0 Worker, which has no application bindings.
 [ ] Verify production DNS, SSL, live Paystack plans and live webhook after the production Worker is configured.

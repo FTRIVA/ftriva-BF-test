@@ -432,6 +432,7 @@ async function savePaidAssessment(payment, packageId, assessment, env, assessmen
       body: JSON.stringify(record)
     }
   );
+  await syncMemberApp(env, { kind: "assessment", email: customerEmail, paymentReference: payment.reference, packageCode: packageId, assessment, submittedAt: record.submitted_at, requiresManualReview: assessmentValidation?.requiresManualReview === true });
 }
 __name(savePaidAssessment, "savePaidAssessment");
 async function submitFounding10Assessment(claimToken, assessment, env) {
@@ -474,12 +475,12 @@ async function handlePaymentInitialize(request, env) {
   const payload = {
     email,
     currency: "ZAR",
-    callback_url: callbackUrl,
+  callback_url: callbackUrl,
     metadata: {
       custom_fields: [
         { display_name: "Customer name", variable_name: "customer_name", value: fullName },
         { display_name: "Phone", variable_name: "phone", value: phone },
-        { display_name:"FTRIVA package", variable_name: "ftriva_package", value: packageId }
+        { display_name: "FTRIVA package", variable_name: "ftriva_package", value: packageId }
       ],
       ftriva_package: packageId,
       customer_name: fullName,
@@ -595,7 +596,7 @@ async function handleDigitalDownload(request, env) {
       env
     );
     if (!Array.isArray(purchases) || purchases.length !== 1) {
-      return json({ error: "We could not confirm an active DIGITAL purchase for this link. PPlease contact FTRIVA." }, 403);
+      return json({ error: "We could not confirm an active DIGITAL purchase for this link. Please contact FTRIVA." }, 403);
     }
     const { url: supabaseUrl, key } = getSupabaseConfig(env);
     const headers = new Headers({ apikey: key });
@@ -681,7 +682,7 @@ async function handlePaymentVerify(request, env) {
         }, 202);
       }
     }
-    await sendFtrivaPurchaseEmails(env, payment, packageId, packageInfo, verifiedMembershipCode);
+    await sendFtrivaPurchaseEmails(env, payment, packageId, packageInfo, verififiedMembershipCode);
     return json({
       verified: true,
       recorded: true,

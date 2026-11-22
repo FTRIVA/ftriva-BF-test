@@ -3,27 +3,15 @@
   "name": "ftriva-test",
   "main": "src/index.js",
   "compatibility_date": "2026-11-17",
-  "send_email": [
-    {
-      "name": "EMAIL",
-      "remote": true,
-      "destination_address": "ftrivafitness@gmail.com",
-      "allowed_sender_addresses": [
-        "notifications@ftriva.com"
-      ]
-    }
-  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": [
-      "/api/*"
-    ]
+    "run_worker_first": ["/api/*"]
   },
   "vars": {
     "ENVIRONMENT": "test",
     "SUPABASE_URL": "https://jygjaxsztnmgykzhukdx.supabase.co",
-    "PAYSTACK_PLAN_ESSENTIAL": "PLN_xn18tbtoq11ft",
+    "PAYSTACK_PLAN_ESSENTIAL": "PLN_xn18tbtoq11ftll",
     "PAYSTACK_PLAN_PLUS": "PLN_xqfeamf436nwscj",
     "PAYSTACK_PLAN_ELITE": "PLN_4qgvwhs6xus1wnb"
   }

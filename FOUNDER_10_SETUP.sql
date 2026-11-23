@@ -9,7 +9,7 @@ create table if not exists public.ftriva_founding10_claims (
   email text not null,
   full_name text not null,
   phone text,
-  package_id text not null check (package_id in ('START','PROGRESS','PERFORMANCE','DIGITAL')),
+  package_id text not null check (package_id in ('START','PROGRESS','PERFORMANCE')),
   claim_token_hash text not null unique,
   status text not null default 'claimed'
     check (status in ('claimed','assessment_submitted','cancelled')),
@@ -55,7 +55,7 @@ declare
   v_count integer;
   v_id uuid;
 begin
-  if upper(p_package_id) not in ('START','PROGRESS','PERFORMANCE','DIGITAL') then
+  if upper(p_package_id) not in ('START','PROGRESS','PERFORMANCE') then
     return jsonb_build_object('claimed', false, 'reason', 'invalid_package');
   end if;
 

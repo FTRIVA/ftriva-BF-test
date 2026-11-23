@@ -502,7 +502,8 @@ async function submitFounding10Assessment(claimToken, assessment, env) {
       reference: safeText(result.claim_id, 160),
       packageCode: safeText(result.package_id, 30).toUpperCase(),
       assessmentStatus: safeText(result.status, 40),
-      submittedAt: result.submitted_at || new Date().toISOString()
+      submittedAt: result.submitted_at || new Date().toISOString(),
+      assessment
     });
   } catch (error) {
     console.error("Founding 10 assessment saved; member-app entitlement sync is pending:", error?.message || "Unknown sync error");

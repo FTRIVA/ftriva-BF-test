@@ -20,7 +20,7 @@ if (quizForm) quizForm.addEventListener('submit', e => {
  e.preventDefault(); const data=new FormData(quizForm); const goal=data.get('goal'); const experience=String(data.get('experience')||'').trim().toLowerCase(); const ongoing=data.get('coaching')==='ongoing';
  let id=ongoing?'PLUS':goal==='performance'?'PERFORMANCE':experience==='beginner'||experience.includes('returning')?'START':'PROGRESS';
  const p=PACKAGE_INFO[id], result=$('#recommendation-result'); result.classList.remove('hidden');
- result.innerHTML=`<span class="recommend-label">Suggested for you</span><h3>${p.name} — ${p.price}</h3><p>Based on your answers, ${p.name} may be a useful starting point. This is a recommendation, not a restriction — you can choose any package.</p><a class="btn btn-bronze" href="start-assessment.html?package=${id}">Choose ${id}</a><div class="recommendation-package-list"><a href="#packages">Compare all seven packages</a></div>`;
+ result.innerHTML=`<span class="recommend-label">Suggested for you</span><h3>${p.name} — ${p.price}</h3><p>Based on your answers, ${p.name} may be a useful starting point. This is a recommendation, not a restriction — you can choose any package.</p><a class="btn btn-bronze" href="start-assessment.html?package=${id}">Choose ${id}</a><div class="recommendation-package-list"><a href="programmes.html#packages">Compare all seven packages</a></div>`;
  result.scrollIntoView({behavior:'smooth',block:'center'});
 });
 

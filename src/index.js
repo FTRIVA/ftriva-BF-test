@@ -501,6 +501,7 @@ async function submitFounding10Assessment(claimToken, assessment, env) {
       email: safeText(result.email, 254).toLowerCase(),
       reference: safeText(result.claim_id, 160),
       packageCode: safeText(result.package_id, 30).toUpperCase(),
+      assessmentStatus: safeText(result.status, 40),
       submittedAt: result.submitted_at || new Date().toISOString()
     });
   } catch (error) {

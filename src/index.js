@@ -495,6 +495,17 @@ async function submitFounding10Assessment(claimToken, assessment, env) {
     error.status = 409;
     throw error;
   }
+  try {
+    await syncMemberApp(env, {
+      kind: "founding10_assessment",
+      email: safeText(result.email, 254).toLowerCase(),
+      reference: safeText(result.claim_id, 160),
+      packageCode: safeText(result.package_id, 30).toUpperCase(),
+      submittedAt: result.submitted_at || new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Founding 10 assessment saved; member-app entitlement sync is pending:", error?.message || "Unknown sync error");
+  }
   return result;
 }
 __name(submitFounding10Assessment, "submitFounding10Assessment");
@@ -785,6 +796,11 @@ async function handleFounding10Claim(request, env) {
         return json({ claimed: false, error: "All 10 Founding 10 places have been claimed." }, 409);
       }
       return json({ claimed: false, error: "The Founding 10 claim details could not be accepted." }, 400);
+    }
+    try {
+      await syncMemberApp(env, { kind: "founding10", email, reference: safeText(result.claim_id, 160), packageCode: packageId, fullName, phone });
+    } catch (syncError) {
+      console.error("Founding 10 claim saved; member-app entitlement sync is pending:", syncError?.message || "Unknown sync error");
     }
     await sendSignupNotification(env, "Founding 10 free-programme claim", await sha256(email + ":" + packageId));
     await sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash: tokenHash, claimId: result.claim_id, siteUrl: new URL(request.url).origin });

@@ -48,7 +48,11 @@ if(callbackMessage){const params=new URLSearchParams(location.search),reference=
 
 const assessmentForm=$('#assessment-form');
 if(assessmentForm){
- const params=new URLSearchParams(location.search),claimToken=params.get('claim')||sessionStorage.getItem('ftriva_founding10_claim')||'';
+ const params=new URLSearchParams(location.search),hashParams=new URLSearchParams(location.hash.replace(/^#/,''));
+ const hashClaim=hashParams.get('claim')||'';
+ if(hashClaim)sessionStorage.setItem('ftriva_founding10_claim',hashClaim);
+ const claimToken=params.get('claim')||hashClaim||sessionStorage.getItem('ftriva_founding10_claim')||'';
+ if(hashClaim)history.replaceState(null,'',location.pathname+location.search);
  let reference=params.get('reference')||params.get('trxref')||sessionStorage.getItem('ftriva_verified_reference')||'';
  let verifiedPackage=params.get('package')||sessionStorage.getItem('ftriva_verified_package')||'Selected FTRIVA package';
  const claimField=$('#founding-claim-token'),locked=$('#assessment-locked'),paymentField=$('#payment-reference'),packageLabel=$('#assessment-package');

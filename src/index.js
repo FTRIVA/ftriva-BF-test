@@ -162,7 +162,7 @@ async function supabaseRequest(path, env, options = {}) {
   return data;
 }
 __name(supabaseRequest, "supabaseRequest");
-async function sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash, siteUrl }) {
+async function sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash, claimId, siteUrl }) {
  const name=safeText(fullName,120)||"there";
  const digital=packageId==="DIGITAL";
  const appUrl=safeText(env.FTRIVA_APP_URL,500)||((env.ENVIRONMENT||"test").toLowerCase()==="test"?"https://app-test.ftriva.com":"https://app.ftriva.com");
@@ -176,7 +176,7 @@ async function sendFounding10ClaimEmail(env, { email, fullName, packageId, claim
  const loginText="You can already sign in to the FTRIVA member web app using the same email address you used for your Founding 10 claim. If you are new, create an account and confirm your email. Your programme will appear once FTRIVA has completed the review, prepared it and published your access.";
  const textBody=["Hi "+name+",","",intro,"",next,"",digital?"FTRIVA will contact you with the next steps for your DIGITAL resources.": "Complete your assessment using the secure button in this email. The link securely connects your assessment to your Founding 10 claim.","","FTRIVA MEMBER WEB APP","Open: "+appUrl,"Sign in using this same email address. If you are new, create an account and confirm your email. Your programme will appear once FTRIVA has reviewed your information, prepared the programme and activated access.","","ADD TO HOME SCREEN","iPhone/iPad: Open the member app link in Safari, tap Share, then Add to Home Screen.","Android: Open the member app link in Chrome, tap the three-dot menu, then Add to Home screen or Install app.","","Your requested start date is recorded as your intended programme start date. Access is activated only after programme publication and any required safety review.","","Need help? WhatsApp FTRIVA: +27 74 616 0421 or email ftrivafitness@gmail.com","","FIT. TRAIN. THRIVE.","FTRIVA"].join(String.fromCharCode(10));
  const htmlBody="<div style='background:#F5F1E8;padding:28px;font-family:Arial,sans-serif;color:#101D2B'><div style='max-width:560px;margin:auto;background:#fff;border-radius:16px;padding:28px'><div style='font-weight:900;letter-spacing:4px;font-size:22px'>FTRIVA</div><div style='color:#A8B8A0;font-size:11px;letter-spacing:2px;margin-top:4px'>FIT. TRAIN. THRIVE.</div><h1 style='font-size:25px;margin-top:28px'>Your Founding 10 place is confirmed</h1><p>Hi "+emailEscape(name)+",</p><p>"+emailEscape(intro)+"</p><p>"+emailEscape(next)+"</p>"+assessmentLink+"<h3>Access your FTRIVA member app</h3><p>"+emailEscape(loginText)+"</p><p><a href='"+emailEscape(appUrl)+"' style='display:inline-block;background:#101D2B;color:#fff;padding:13px 18px;border-radius:8px;text-decoration:none;font-weight:bold'>Open your FTRIVA app</a></p><h3>Add to your Home Screen</h3><p><b>iPhone/iPad:</b> Open this link in Safari, tap Share, then Add to Home Screen.</p><p><b>Android:</b> Open in Chrome, tap the three-dot menu, then Add to Home screen or Install app.</p><p>Your requested start date is recorded as your intended programme start date. Access is activated only after programme publication and any required safety review.</p><p>Need help? WhatsApp <b>+27 74 616 0421</b> or email <a href='mailto:ftrivafitness@gmail.com'>ftrivafitness@gmail.com</a>.</p><p style='color:#A8B8A0;font-weight:bold'>FIT. TRAIN. THRIVE.</p></div></div>";
- await sendFtrivaEmailOnce(env,"ftriva:founding10:claim:"+claimTokenHash,"founding10_claim_customer",email,subject,textBody,htmlBody,{package:packageId,environment:(env.ENVIRONMENT||"test").toLowerCase()});
+ await sendFtrivaEmailOnce(env,claimId?"founding10:"+claimId:"ftriva:founding10:claim:"+claimTokenHash,"founding10_confirmation",email,subject,textBody,htmlBody,{package:packageId,environment:(env.ENVIRONMENT||"test").toLowerCase()});
 }
 async function sendFounding10AssessmentEmail(env, assessment, submissionResult, claimTokenHash) {
  const email=safeText(assessment.email||assessment.personal?.email,254).toLowerCase();if(!validEmail(email))return;
@@ -787,7 +787,7 @@ async function handleFounding10Claim(request, env) {
       return json({ claimed: false, error: "The Founding 10 claim details could not be accepted." }, 400);
     }
     await sendSignupNotification(env, "Founding 10 free-programme claim", await sha256(email + ":" + packageId));
-    await sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash: tokenHash, siteUrl: new URL(request.url).origin });
+    await sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash: tokenHash, claimId: result.claim_id, siteUrl: new URL(request.url).origin });
     return json({
       claimed: true,
       claimToken,

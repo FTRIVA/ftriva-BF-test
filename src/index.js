@@ -21,7 +21,7 @@ var PACKAGES = {
   PLUS: { name: "PLUS", amount: 39900, type: "monthly", planEnv: "PAYSTACK_PLAN_PLUS" },
   ELITE: { name: "ELITE", amount: 59900, type: "monthly", planEnv: "PAYSTACK_PLAN_ELITE" }
 };
-var FOUNDING10_PACKAGES = /* @__PURE__ */ new Set(["START", "PROGRESS", "PERFORMANCE", "DIGITAL"]);
+var FOUNDING10_PACKAGES = /* @__PURE__ */ new Set(["START", "PROGRESS", "PERFORMANCE"]);
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -966,7 +966,7 @@ var index_default = {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/app.js") { return new Response(FTRIVA_APP_JS, { headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
     if (request.method === "GET" && url.pathname === "/my-account") {
-      const appUrl = safeText(env.FTRIVA_APP_URL, 500) || ((env.ENVIRONMENT || "test").toLowerCase() === "test" ? "/my-account" : "");
+      const appUrl = safeText(env.FTRIVA_APP_URL, 500) || ((env.ENVIRONMENT || "test").toLowerCase() === "test" ? "https://app-test.ftriva.com" : "https://app.ftriva.com");
       if (appUrl) {
         try {
           const destination = new URL(appUrl);

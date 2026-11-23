@@ -162,6 +162,33 @@ async function supabaseRequest(path, env, options = {}) {
   return data;
 }
 __name(supabaseRequest, "supabaseRequest");
+async function sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash, siteUrl }) {
+ const name=safeText(fullName,120)||"there";
+ const digital=packageId==="DIGITAL";
+ const assessmentUrl=siteUrl.replace(/\/$/,"")+"/assessment.html?package="+encodeURIComponent(packageId)+"#claim="+encodeURIComponent(claimToken);
+ const subject=digital?"Your FTRIVA Founding 10 DIGITAL place is confirmed":"Your FTRIVA Founding 10 place is confirmed";
+ const intro=digital
+  ?"Your free Founding 10 DIGITAL place has been confirmed. No payment or fitness assessment is required. FTRIVA will contact you at this email address to arrange delivery."
+  :"Your free Founding 10 "+packageId+" place has been confirmed. Your next step is to complete your fitness assessment so FTRIVA can review your information and prepare your programme.";
+ const action=digital?"FTRIVA will contact you with the next steps for arranging your DIGITAL resources.":"Complete your assessment using the secure button below. If you return to it later, use this email so your claim remains linked.";
+ const textBody=["Hi "+name+",","",""+intro,"",action,"",digital?"No payment details or subscription commitment are required.":"Your requested start date will be recorded in the assessment. Programme access is activated only after publication and any required safety review.","","Need help? WhatsApp FTRIVA: +27 74 616 0421 or email ftrivafitness@gmail.com","","FIT. TRAIN. THRIVE.","FTRIVA"].join(String.fromCharCode(10));
+ const button=digital?"":"<p><a href='"+assessmentUrl+"' style='display:inline-block;background:#101D2B;color:#fff;padding:14px 20px;border-radius:8px;text-decoration:none;font-weight:bold'>Complete your assessment</a></p>";
+ const htmlBody="<div style='background:#F5F1E8;padding:28px;font-family:Arial,sans-serif;color:#101D2B'><div style='max-width:560px;margin:auto;background:#fff;border-radius:16px;padding:28px'><div style='font-weight:900;letter-spacing:4px;font-size:22px'>FTRIVA</div><div style='color:#A8B8A0;font-size:11px;letter-spacing:2px;margin-top:4px'>FIT. TRAIN. THRIVE.</div><h1 style='font-size:25px;margin-top:28px'>"+(digital?"Your Founding 10 place is confirmed":"Your Founding 10 place is confirmed")+"</h1><p>Hi "+emailEscape(name)+",</p><p>"+emailEscape(intro)+"</p>"+button+"<p>"+emailEscape(action)+"</p><p>Your requested start date is treated as your intended programme start date. Access is activated only after programme publication and any required safety review.</p><p>Need help? WhatsApp <b>+27 74 616 0421</b> or email <a href='mailto:ftrivafitness@gmail.com'>ftrivafitness@gmail.com</a>.</p><p style='color:#A8B8A0;font-weight:bold'>FIT. TRAIN. THRIVE.</p></div></div>";
+ await sendFtrivaEmailOnce(env,"ftriva:founding10:claim:"+claimTokenHash,"founding10_claim_customer",email,subject,textBody,htmlBody,{package:packageId,environment:(env.ENVIRONMENT||"test").toLowerCase()});
+}
+async function sendFounding10AssessmentEmail(env, assessment, submissionResult, claimTokenHash) {
+ const email=safeText(assessment.email,254).toLowerCase();if(!validEmail(email))return;
+ const name=safeText(assessment.fullName||assessment.full_name,120)||"there";
+ const status=safeText(submissionResult?.status,40);
+ const underReview=status==="under_review";
+ const subject="FTRIVA has received your Founding 10 assessment";
+ const message=underReview
+  ?"Your assessment has been received and is now under review. This review helps FTRIVA check the information before preparing your programme. We will contact you if we need anything further."
+  :"Your assessment has been received successfully. FTRIVA will now review your information and prepare your programme.";
+ const textBody=["Hi "+name+",","","We've received your Founding 10 assessment.","",message,"","Your requested start date is recorded as your intended programme start date. Programme access is activated only after publication and any required safety review.","","Need help? WhatsApp FTRIVA: +27 74 616 0421 or email ftrivafitness@gmail.com","","FIT. TRAIN. THRIVE.","FTRIVA"].join(String.fromCharCode(10));
+ const htmlBody="<div style='background:#F5F1E8;padding:28px;font-family:Arial,sans-serif;color:#101D2B'><div style='max-width:560px;margin:auto;background:#fff;border-radius:16px;padding:28px'><div style='font-weight:900;letter-spacing:4px;font-size:22px'>FTRIVA</div><div style='color:#A8B8A0;font-size:11px;letter-spacing:2px;margin-top:4px'>FIT. TRAIN. THRIVE.</div><h1 style='font-size:25px;margin-top:28px'>Assessment received</h1><p>Hi "+emailEscape(name)+",</p><p>We've received your Founding 10 assessment.</p><p>"+emailEscape(message)+"</p><p>Your requested start date is recorded as your intended programme start date. Programme access is activated only after publication and any required safety review.</p><p>Need help? WhatsApp <b>+27 74 616 0421</b> or email <a href='mailto:ftrivafitness@gmail.com'>ftrivafitness@gmail.com</a>.</p><p style='color:#A8B8A0;font-weight:bold'>FIT. TRAIN. THRIVE.</p></div></div>";
+ await sendFtrivaEmailOnce(env,"ftriva:founding10:assessment:"+claimTokenHash,"founding10_assessment_customer",email,subject,textBody,htmlBody,{status:status||"assessment_submitted",environment:(env.ENVIRONMENT||"test").toLowerCase()});
+}
 async function sendSignupNotification(env, signupType, idempotencyKey) {
   const key = safeText(idempotencyKey, 180);
   if (!key) return;
@@ -465,6 +492,7 @@ async function submitFounding10Assessment(claimToken, assessment, env) {
     error.status = 409;
     throw error;
   }
+  return result;
 }
 __name(submitFounding10Assessment, "submitFounding10Assessment");
 async function handlePaymentInitialize(request, env) {
@@ -756,6 +784,7 @@ async function handleFounding10Claim(request, env) {
       return json({ claimed: false, error: "The Founding 10 claim details could not be accepted." }, 400);
     }
     await sendSignupNotification(env, "Founding 10 free-programme claim", await sha256(email + ":" + packageId));
+    await sendFounding10ClaimEmail(env, { email, fullName, packageId, claimToken, claimTokenHash: tokenHash, siteUrl: new URL(request.url).origin });
     return json({
       claimed: true,
       claimToken,
@@ -785,7 +814,8 @@ async function handleAssessmentSubmit(request, env) {
   }
   if (body.claimToken) {
     try {
-      await submitFounding10Assessment(body.claimToken, assessment, env);
+      const submissionResult = await submitFounding10Assessment(body.claimToken, assessment, env);
+      await sendFounding10AssessmentEmail(env, assessment, submissionResult, await sha256(body.claimToken));
       return json({ submitted: true, founding10: true, message: "Your Founding 10 assessment has been submitted." });
     } catch (error) {
       return json({ error: `Your assessment could not be saved. ${error.message}` }, error.status || 503);
